@@ -14,7 +14,10 @@ MIN_NODE="22.13.0"
 
 step() { printf "\n\033[1;34m==>\033[0m \033[1m%s\033[0m\n" "$1"; }
 note() { printf "    %s\n" "$1"; }
-config_value() { plutil -extract "$1" raw -o - "$CONFIG" 2>/dev/null || true; }
+# plutil prints its "no value" error to stdout, so read the json with node instead
+config_value() {
+  node -e 'try { const v = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"))[process.argv[2]]; if (v != null) console.log(v) } catch {}' "$CONFIG" "$1"
+}
 version_ge() { [[ "$(printf '%s\n%s\n' "$2" "$1" | sort -V | head -n 1)" == "$2" ]]; }
 
 if [[ "$(uname)" != "Darwin" ]]; then
@@ -33,12 +36,20 @@ if ! version_ge "$NODE_VERSION" "$MIN_NODE"; then
   note "Found Node.js $NODE_VERSION, but RyHome needs $MIN_NODE or newer."
   exit 1
 fi
-NODE="$(readlink -f "$(command -v node)")"
+NODE="$(command -v node)"
 note "Found Node.js $NODE_VERSION."
+
+if ! xcode-select -p >/dev/null 2>&1; then
+  xcode-select --install >/dev/null 2>&1 || true
+  note "A window just opened to install Apple's command line tools."
+  note "Run ./install.sh again once that finishes."
+  exit 1
+fi
 
 step "Building"
 npm ci --no-fund --no-audit --loglevel=error
 npm run build --silent
+cc -O2 -o .ryhome-server launcher.c
 
 step "Installing"
 mkdir -p "$INSTALL_DIR" "$LOG_DIR" "$HOME/Library/LaunchAgents"
@@ -52,6 +63,13 @@ rm -rf "$INSTALL_DIR/dist"
 cp -R dist package.json package-lock.json "$INSTALL_DIR/"
 (cd "$INSTALL_DIR" && npm ci --omit=dev --no-fund --no-audit --loglevel=error)
 ENTRY="$INSTALL_DIR/dist/main.js"
+LAUNCHER="$INSTALL_DIR/ryhome-server"
+# a rebuilt launcher loses full disk access, so only replace it when it actually changed
+if ! cmp -s .ryhome-server "$LAUNCHER"; then
+  rm -f "$LAUNCHER"
+  cp .ryhome-server "$LAUNCHER"
+fi
+rm -f .ryhome-server
 "$NODE" "$ENTRY" --pairing-code >/dev/null
 
 port_in_use() { nc -z -G 1 127.0.0.1 "$1" >/dev/null 2>&1; }
@@ -103,7 +121,9 @@ cat > "$PLIST" <<PLIST
     <string>$LABEL</string>
     <key>ProgramArguments</key>
     <array>
+        <string>$LAUNCHER</string>
         <string>$NODE</string>
+        <string>--disable-warning=ExperimentalWarning</string>
         <string>$ENTRY</string>
     </array>
     <key>WorkingDirectory</key>
@@ -173,16 +193,17 @@ note "Running on port $PORT."
 if [[ "$CAPS" != *'"homeKitNames":true'* ]]; then
   step "Optional: use your Home app names and rooms"
   note "RyHome can read accessory names and rooms from the Home app's database (read-only)."
-  note "That needs Full Disk Access for Node.js. Without it, lights use their built-in names"
+  note "That needs Full Disk Access for ryhome-server. Without it, lights use their built-in names"
   note "and you can rename them in $CONFIG."
   answer=""
   read -r -p "    Set up Full Disk Access now? [y/N] " answer || true
   if [[ "$answer" =~ ^[Yy] ]]; then
     note "1. System Settings is opening at Privacy & Security > Full Disk Access."
-    note "2. A Finder window is opening with node selected."
-    note "3. Drag node into the list and make sure its switch is on."
+    note "2. A Finder window is opening with ryhome-server selected."
+    note "3. Drag ryhome-server into the list and make sure its switch is on."
+    note "   Already listed from an earlier install? Remove it with the minus button, then add it again."
     open "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles"
-    open -R "$NODE"
+    open -R "$LAUNCHER"
     read -r -p "    Press Return once it's switched on... " _ || true
     launchctl kickstart -k "$DOMAIN/$LABEL"
     CAPS="$(wait_for_server || true)"

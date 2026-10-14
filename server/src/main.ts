@@ -170,7 +170,7 @@ const routes: Route[] = [
     async () => {
       refreshHomeKit();
       const info = homeKitInfo();
-      if (!info) throw new ApiError(503, "permission_required", "Give Node.js Full Disk Access on the Mac to see Home app accessories.");
+      if (!info) throw new ApiError(503, "permission_required", "Give ryhome-server Full Disk Access on the Mac to see Home app accessories.");
       const linkedTo = new Map(Object.entries(links.links).map(([nodeId, id]) => [id, nodeId]));
       return info.accessories
         .filter((a) => a.vendorId !== null)

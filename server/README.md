@@ -19,7 +19,7 @@ The script:
 1. Builds the server and installs it to `~/Library/Application Support/RyHome/`.
 2. Registers a LaunchAgent, so it starts when you log in and restarts itself if it quits. If port 8788 is taken, it moves to the next free port.
 3. Offers to put your Tailscale address in the pairing code, if Tailscale is installed.
-4. Optionally walks you through **Full Disk Access** for Node.js, so lights get their names and rooms from the Home app.
+4. Optionally walks you through **Full Disk Access** for `ryhome-server`, so lights get their names and rooms from the Home app.
 5. Prints the pairing code to paste into RyHome on Windows.
 
 **Updating:** `git pull`, then `./install.sh` again.
@@ -40,7 +40,7 @@ This adds RyHome as a second controller. The light stays in the Home app with th
 
 Only Matter accessories work this way. Lights that are HomeKit-only can't be added.
 
-The Mac must be on the same local network as the lights, and the network must allow IPv6 and mDNS (most home networks do). On macOS 15 and later, allow the **Local Network** prompt for Node.js.
+The Mac must be on the same local network as the lights, and the network must allow IPv6 and mDNS (most home networks do). On macOS 15 and later, allow the **Local Network** prompt for `ryhome-server`.
 
 ## Home app names and rooms
 
@@ -48,7 +48,7 @@ With Full Disk Access, the server reads `~/Library/HomeKit/core.sqlite` read-onl
 
 Without Full Disk Access, lights use the name the device reports. You can rename them in the config (see below).
 
-The permission is tied to the Node.js binary. If a Node upgrade changes it, run `./install.sh` again to set it up for the new one.
+The permission belongs to `ryhome-server`, a tiny launcher that starts Node, so it survives Node upgrades. Building it needs Apple's command line tools, which Homebrew already installs.
 
 ## HomePod temperature and humidity
 
