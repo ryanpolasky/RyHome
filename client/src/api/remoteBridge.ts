@@ -1,5 +1,5 @@
 import type { ConnectionStatus, RyHomeBridge } from "./bridge";
-import type { Accessory, AccessoryDetails, BridgeEvent, Capabilities, GroupInput, Home, LightState } from "./types";
+import type { Accessory, AccessoryDetails, BridgeEvent, Capabilities, GroupInput, Home, LightState, PresetInput } from "./types";
 
 const POLICY_VIOLATION = 1008;
 const WATCHDOG_MS = 15_000;
@@ -30,6 +30,10 @@ export class RemoteBridge implements RyHomeBridge {
 
   getHome(): Promise<Home> {
     return this.request("GET", "/v1/home");
+  }
+
+  setColorPresets(presets: PresetInput[]): Promise<void> {
+    return this.request("PATCH", "/v1/home", { colorPresets: presets });
   }
 
   setLight(accessoryId: string, patch: Partial<LightState>): Promise<void> {

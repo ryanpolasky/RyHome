@@ -135,6 +135,8 @@ function HomeApp({ bridge, demo, onToggleDemo }: { bridge: RyHomeBridge; demo: b
             onClose={closeSheet}
             onSetLight={(patch) => store.setLight(open.id, patch)}
             onToggleLight={store.toggleLight}
+            presets={store.home.colorPresets}
+            onSavePreset={store.setColorPreset}
           />
         )}
         {adding && <AddLightSheet bridge={bridge} rooms={store.home.rooms} onClose={() => setAdding(false)} />}

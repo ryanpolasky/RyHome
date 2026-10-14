@@ -34,7 +34,7 @@ async function setLight(id: string, patch: Partial<LightState>) {
 }
 
 const shape = (h: Home) =>
-  JSON.stringify([h.name, h.temperatureUnit, h.rooms, h.scenes, h.accessories.map((a) => [a.id, a.name, a.roomId])]);
+  JSON.stringify([h.name, h.temperatureUnit, h.colorPresets, h.rooms, h.scenes, h.accessories.map((a) => [a.id, a.name, a.roomId])]);
 
 function scheduleChange() {
   if (changeTimer) return;

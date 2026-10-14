@@ -1,6 +1,7 @@
 import type { AccessoryStore } from "./accessories.js";
 import type { GroupStore } from "./groups.js";
 import type { MatterHub } from "./matter.js";
+import { resolvePresets } from "./presets.js";
 import type { SceneStore } from "./scenes.js";
 import type { Accessory, Home, LightAccessory, LightState, Room } from "./types.js";
 
@@ -86,6 +87,7 @@ export function buildHome(matter: MatterHub, scenes: SceneStore, store: Accessor
     id: "home",
     name: store.settings.name ?? "Home",
     temperatureUnit: store.settings.temperatureUnit ?? defaultUnit(),
+    colorPresets: resolvePresets(store.settings.colorPresets),
     rooms: [...rooms.values()].filter((r) => usedRooms.has(r.id)).sort((a, b) => a.name.localeCompare(b.name)),
     accessories,
     scenes: scenes.scenes,

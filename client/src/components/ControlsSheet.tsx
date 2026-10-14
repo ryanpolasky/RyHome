@@ -1,7 +1,7 @@
 import type { CSSProperties } from "react";
-import { useContext, useRef, useState } from "react";
+import { useCallback, useContext, useEffect, useRef, useState } from "react";
 import type { RyHomeBridge } from "../api/bridge";
-import type { Accessory, LightAccessory, LightIcon, LightState, Room } from "../api/types";
+import type { Accessory, ColorPreset, LightAccessory, LightIcon, LightState, PresetInput, Room } from "../api/types";
 import { lightColor, statusText, UnitContext } from "../home";
 import { ColorWheel } from "./ColorWheel";
 import { GroupEditor } from "./GroupEditor";
@@ -10,24 +10,107 @@ import { RoomPicker } from "./RoomPicker";
 import { Sheet } from "./Sheet";
 import { AccessoryIcon, accessoryIcon, iconTint } from "./Tile";
 
-type Preset = { id: string; kind: "temperature" | "color"; patch: Pick<LightState, "colorMode" | "hue" | "saturation" | "colorTemperature"> };
+const LONG_PRESS_MS = 500;
 
-const presets: Preset[] = [
-  { id: "warm", kind: "temperature", patch: { colorMode: "temperature", colorTemperature: 454, hue: 30, saturation: 50 } },
-  { id: "soft", kind: "temperature", patch: { colorMode: "temperature", colorTemperature: 370, hue: 35, saturation: 40 } },
-  { id: "daylight", kind: "temperature", patch: { colorMode: "temperature", colorTemperature: 250, hue: 45, saturation: 15 } },
-  { id: "cool", kind: "temperature", patch: { colorMode: "temperature", colorTemperature: 160, hue: 210, saturation: 10 } },
-  { id: "red", kind: "color", patch: { colorMode: "hs", hue: 0, saturation: 85, colorTemperature: 370 } },
-  { id: "orange", kind: "color", patch: { colorMode: "hs", hue: 28, saturation: 90, colorTemperature: 370 } },
-  { id: "purple", kind: "color", patch: { colorMode: "hs", hue: 270, saturation: 75, colorTemperature: 370 } },
-  { id: "blue", kind: "color", patch: { colorMode: "hs", hue: 215, saturation: 80, colorTemperature: 370 } },
-];
+function matches(state: LightState, preset: ColorPreset): boolean {
+  if (state.colorMode !== preset.colorMode) return false;
+  return preset.colorMode === "temperature"
+    ? Math.abs(state.colorTemperature - preset.colorTemperature) < 10
+    : Math.abs(state.hue - preset.hue) < 4 && Math.abs(state.saturation - preset.saturation) < 4;
+}
 
-function matches(state: LightState, patch: Preset["patch"]): boolean {
-  if (state.colorMode !== patch.colorMode) return false;
-  return patch.colorMode === "temperature"
-    ? Math.abs(state.colorTemperature - patch.colorTemperature) < 10
-    : Math.abs(state.hue - patch.hue) < 4 && Math.abs(state.saturation - patch.saturation) < 4;
+function Swatch({
+  preset,
+  selected,
+  disabled,
+  onApply,
+  onMenu,
+}: {
+  preset: ColorPreset;
+  selected: boolean;
+  disabled: boolean;
+  onApply: () => void;
+  onMenu: (x: number, y: number) => void;
+}) {
+  const press = useRef<{ timer: number; fired: boolean } | null>(null);
+  const cancel = () => {
+    if (press.current) clearTimeout(press.current.timer);
+  };
+  return (
+    <button
+      aria-label={preset.custom ? "Saved color" : "Color preset"}
+      title="Right-click or hold to save the current color here"
+      disabled={disabled}
+      className={`preset ${selected ? "selected" : ""} ${preset.custom ? "saved" : ""}`}
+      style={{ background: lightColor(preset) }}
+      onPointerDown={(e) => {
+        if (e.button !== 0) return;
+        const rect = e.currentTarget.getBoundingClientRect();
+        press.current = { fired: false, timer: window.setTimeout(() => {
+          press.current!.fired = true;
+          onMenu(rect.left + rect.width / 2, rect.top);
+        }, LONG_PRESS_MS) };
+      }}
+      onPointerUp={cancel}
+      onPointerLeave={cancel}
+      onClick={() => {
+        if (press.current?.fired) return;
+        onApply();
+      }}
+      onContextMenu={(e) => {
+        e.preventDefault();
+        cancel();
+        onMenu(e.clientX, e.clientY);
+      }}
+    />
+  );
+}
+
+function SwatchMenu({
+  x,
+  y,
+  custom,
+  onSave,
+  onReset,
+  onClose,
+}: {
+  x: number;
+  y: number;
+  custom: boolean;
+  onSave: () => void;
+  onReset: () => void;
+  onClose: () => void;
+}) {
+  useEffect(() => {
+    const close = () => onClose();
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      e.stopPropagation();
+      onClose();
+    };
+    window.addEventListener("pointerdown", close);
+    window.addEventListener("keydown", onKey, true);
+    return () => {
+      window.removeEventListener("pointerdown", close);
+      window.removeEventListener("keydown", onKey, true);
+    };
+  }, [onClose]);
+  const pick = (action: () => void) => () => {
+    action();
+    onClose();
+  };
+  return (
+    <div className="menu swatch-menu" style={{ left: x, top: y }} onPointerDown={(e) => e.stopPropagation()}>
+      <button className="menu-item" onClick={pick(onSave)}>
+        Save Current Color Here
+      </button>
+      {custom && (
+        <button className="menu-item" onClick={pick(onReset)}>
+          Reset to Default
+        </button>
+      )}
+    </div>
+  );
 }
 
 function BrightnessSlider({ light, onChange }: { light: LightAccessory; onChange: (patch: Partial<LightState>) => void }) {
@@ -114,18 +197,27 @@ function BrightnessStatus({ light, onChange }: { light: LightAccessory; onChange
 function LightControls({
   light,
   members,
+  presets,
   onSetLight,
+  onSavePreset,
   onToggleMember,
 }: {
   light: LightAccessory;
   members: LightAccessory[];
+  presets: ColorPreset[];
   onSetLight: (patch: Partial<LightState>) => void;
+  onSavePreset: (index: number, preset: PresetInput) => void;
   onToggleMember: (id: string) => void;
 }) {
   const [picking, setPicking] = useState(false);
-  const available = presets.filter((p) => (p.kind === "color" ? light.supports.color : light.supports.temperature));
+  const [menu, setMenu] = useState<{ index: number; x: number; y: number } | null>(null);
+  const closeMenu = useCallback(() => setMenu(null), []);
+  const available = presets
+    .map((preset, index) => ({ preset, index }))
+    .filter(({ preset }) => (preset.colorMode === "hs" ? light.supports.color : light.supports.temperature));
   const canPick = light.supports.color || light.supports.temperature;
-  const custom = !available.some((p) => matches(light.state, p.patch));
+  const custom = !available.some(({ preset }) => matches(light.state, preset));
+  const { colorMode, hue, saturation, colorTemperature } = light.state;
   return (
     <>
       <div className="controls-row">
@@ -152,14 +244,17 @@ function LightControls({
       </div>
       {available.length > 0 && (
         <div className="presets">
-          {available.map((p) => (
-            <button
-              key={p.id}
-              aria-label={p.id}
+          {available.map(({ preset, index }) => (
+            <Swatch
+              key={index}
+              preset={preset}
+              selected={matches(light.state, preset)}
               disabled={!light.reachable}
-              className={`preset ${matches(light.state, p.patch) ? "selected" : ""}`}
-              style={{ background: lightColor(p.patch) }}
-              onClick={() => onSetLight({ ...p.patch, on: true })}
+              onApply={() => {
+                const { custom: _, ...patch } = preset;
+                onSetLight({ ...patch, on: true });
+              }}
+              onMenu={(x, y) => setMenu({ index, x, y })}
             />
           ))}
           {canPick && (
@@ -171,6 +266,17 @@ function LightControls({
             />
           )}
         </div>
+      )}
+      {picking && <p className="add-hint">Right-click or hold a swatch to save this color there.</p>}
+      {menu && (
+        <SwatchMenu
+          x={menu.x}
+          y={menu.y}
+          custom={presets[menu.index].custom}
+          onSave={() => onSavePreset(menu.index, { colorMode, hue, saturation, colorTemperature })}
+          onReset={() => onSavePreset(menu.index, null)}
+          onClose={closeMenu}
+        />
       )}
       {members.length > 0 && (
         <div className="member-strip">
@@ -333,6 +439,8 @@ export function ControlsSheet({
   onClose,
   onSetLight,
   onToggleLight,
+  presets,
+  onSavePreset,
 }: {
   accessory: Accessory;
   accessories: Accessory[];
@@ -342,6 +450,8 @@ export function ControlsSheet({
   onClose: () => void;
   onSetLight: (patch: Partial<LightState>) => void;
   onToggleLight: (id: string) => void;
+  presets: ColorPreset[];
+  onSavePreset: (index: number, preset: PresetInput) => void;
 }) {
   const unit = useContext(UnitContext);
   const [mode, setMode] = useState<"controls" | "settings" | "group">("controls");
@@ -392,7 +502,14 @@ export function ControlsSheet({
           onRemoved={onClose}
         />
       ) : (
-        <LightControls light={accessory} members={members} onSetLight={onSetLight} onToggleMember={onToggleLight} />
+        <LightControls
+          light={accessory}
+          members={members}
+          presets={presets}
+          onSetLight={onSetLight}
+          onSavePreset={onSavePreset}
+          onToggleMember={onToggleLight}
+        />
       )}
     </Sheet>
   );

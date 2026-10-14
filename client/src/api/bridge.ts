@@ -1,10 +1,11 @@
-import type { Accessory, AccessoryDetails, BridgeEvent, Capabilities, GroupInput, Home, LightState } from "./types";
+import type { Accessory, AccessoryDetails, BridgeEvent, Capabilities, GroupInput, Home, LightState, PresetInput } from "./types";
 
 export type ConnectionStatus = "connecting" | "online" | "offline" | "unauthorized";
 
 export interface RyHomeBridge {
   getCapabilities(): Promise<Capabilities>;
   getHome(): Promise<Home>;
+  setColorPresets(presets: PresetInput[]): Promise<void>;
   setLight(accessoryId: string, patch: Partial<LightState>): Promise<void>;
   updateAccessory(accessoryId: string, details: AccessoryDetails): Promise<void>;
   runScene(sceneId: string): Promise<void>;

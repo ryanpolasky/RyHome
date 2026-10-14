@@ -57,10 +57,19 @@ export interface Scene {
   actions: SceneAction[];
 }
 
+export interface ColorPreset {
+  colorMode: "hs" | "temperature";
+  hue: number;
+  saturation: number;
+  colorTemperature: number;
+  custom: boolean;
+}
+
 export interface Home {
   id: string;
   name: string;
   temperatureUnit: "C" | "F";
+  colorPresets: ColorPreset[];
   rooms: Room[];
   accessories: Accessory[];
   scenes: Scene[];

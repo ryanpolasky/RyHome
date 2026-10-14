@@ -1,4 +1,5 @@
 import { readJson, writeJson } from "./config.js";
+import { cleanPresets, type StoredPreset } from "./presets.js";
 import type { LightIcon } from "./types.js";
 
 export interface AccessoryOverride {
@@ -11,6 +12,7 @@ export interface AccessoryOverride {
 export interface HomeSettings {
   name?: string;
   temperatureUnit?: "C" | "F";
+  colorPresets?: StoredPreset[];
 }
 
 const icons: LightIcon[] = ["bulb", "ceiling", "floorLamp", "tableLamp", "lightstrip"];
@@ -66,6 +68,7 @@ export class AccessoryStore {
       ...this.settings,
       ...("name" in raw ? { name: text(raw.name, "name") } : {}),
       ...(raw.temperatureUnit ? { temperatureUnit: raw.temperatureUnit as "C" | "F" } : {}),
+      ...(raw.colorPresets !== undefined ? { colorPresets: cleanPresets(raw.colorPresets) } : {}),
     };
     writeJson(SETTINGS, this.settings);
   }

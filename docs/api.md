@@ -55,7 +55,9 @@ Units: `brightness` and `saturation` are 0-100, `hue` is 0-360, and `colorTemper
 
 ## PATCH /v1/home
 
-`{ "name"?, "temperatureUnit"?: "C" | "F" }`. Returns `204`.
+`{ "name"?, "temperatureUnit"?: "C" | "F", "colorPresets"? }`. Returns `204`.
+
+`colorPresets` is always a list of 8 slots, each `{ "colorMode", "hue", "saturation", "colorTemperature" }` or `null` to use that slot's default. `GET /v1/home` returns all 8 resolved, with `custom: true` on saved ones.
 
 ## PATCH /v1/accessories/:id
 

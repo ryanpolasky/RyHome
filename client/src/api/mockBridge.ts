@@ -1,7 +1,18 @@
 import type { ConnectionStatus, RyHomeBridge } from "./bridge";
-import type { Accessory, BridgeEvent, GroupInput, Home, LightAccessory, LightIcon, LightState } from "./types";
+import type { Accessory, BridgeEvent, ColorPreset, GroupInput, Home, LightAccessory, LightIcon, LightState } from "./types";
 
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+const defaultPresets: Omit<ColorPreset, "custom">[] = [
+  { colorMode: "temperature", colorTemperature: 454, hue: 30, saturation: 50 },
+  { colorMode: "temperature", colorTemperature: 370, hue: 35, saturation: 40 },
+  { colorMode: "temperature", colorTemperature: 250, hue: 45, saturation: 15 },
+  { colorMode: "temperature", colorTemperature: 160, hue: 210, saturation: 10 },
+  { colorMode: "hs", hue: 0, saturation: 85, colorTemperature: 370 },
+  { colorMode: "hs", hue: 28, saturation: 90, colorTemperature: 370 },
+  { colorMode: "hs", hue: 270, saturation: 75, colorTemperature: 370 },
+  { colorMode: "hs", hue: 215, saturation: 80, colorTemperature: 370 },
+];
 
 function light(
   id: string,
@@ -36,6 +47,7 @@ function seed(): Home {
     id: "home",
     name: "Home",
     temperatureUnit: "F",
+    colorPresets: defaultPresets.map((p) => ({ ...p, custom: false })),
     rooms: [
       { id: "front-door", name: "Front Door" },
       { id: "living-room", name: "Living Room" },
@@ -202,6 +214,10 @@ export function createMockBridge(): RyHomeBridge {
     async getHome() {
       await wait(150);
       return structuredClone(home);
+    },
+    async setColorPresets(presets) {
+      home.colorPresets = presets.map((p, i) => (p ? { ...p, custom: true } : { ...defaultPresets[i], custom: false }));
+      broadcast({ type: "homeChanged" });
     },
     async commission(code, details) {
       await wait(1800);

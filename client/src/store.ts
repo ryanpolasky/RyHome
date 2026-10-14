@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ConnectionStatus, RyHomeBridge } from "./api/bridge";
-import type { Accessory, Capabilities, Home, LightState } from "./api/types";
+import type { Accessory, Capabilities, Home, LightState, PresetInput } from "./api/types";
 
 const LIGHT_THROTTLE_MS = 80;
 const HOLD_MS = 4000;
@@ -128,6 +128,25 @@ export function useHomeStore(bridge: RyHomeBridge) {
     [home, setLight]
   );
 
+  // null resets a slot to its default; the engine fills defaults back in on reload
+  const setColorPreset = useCallback(
+    (index: number, preset: PresetInput) => {
+      if (!home) return;
+      const next = home.colorPresets.map((p, i): PresetInput => {
+        if (i === index) return preset;
+        return p.custom ? { colorMode: p.colorMode, hue: p.hue, saturation: p.saturation, colorTemperature: p.colorTemperature } : null;
+      });
+      if (preset) {
+        setHome((h) => h && { ...h, colorPresets: h.colorPresets.map((p, i) => (i === index ? { ...preset, custom: true } : p)) });
+      }
+      bridge.setColorPresets(next).catch((e) => {
+        setActionError(errorMessage(e));
+        load();
+      });
+    },
+    [bridge, home, load]
+  );
+
   const runScene = useCallback(
     (id: string) => bridge.runScene(id).catch((e) => fail(id, e)),
     [bridge, fail]
@@ -144,5 +163,6 @@ export function useHomeStore(bridge: RyHomeBridge) {
     setLight,
     toggleLight,
     runScene,
+    setColorPreset,
   };
 }
