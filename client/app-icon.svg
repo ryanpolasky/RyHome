@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#ececec"/>
+    </linearGradient>
+    <linearGradient id="house" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffb340"/>
+      <stop offset="1" stop-color="#f7722f"/>
+    </linearGradient>
+  </defs>
+  <rect width="1024" height="1024" rx="230" fill="url(#bg)"/>
+  <path fill="url(#house)" d="M512 190 680 330V262q0-12 12-12h36q12 0 12 12v118l106 79c22 18 9 51-18 51h-56v258c0 33-27 60-60 60H586V660q0-20-20-20H458q-20 0-20 20v168H312c-33 0-60-27-60-60V510h-56c-27 0-40-33-18-51z"/>
+</svg>
