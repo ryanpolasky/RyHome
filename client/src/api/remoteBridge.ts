@@ -36,6 +36,10 @@ export class RemoteBridge implements RyHomeBridge {
     return this.request("PATCH", "/v1/home", { colorPresets: presets });
   }
 
+  updateHome(patch: { name?: string; temperatureUnit?: "C" | "F" }): Promise<void> {
+    return this.request("PATCH", "/v1/home", patch);
+  }
+
   setLight(accessoryId: string, patch: Partial<LightState>): Promise<void> {
     return this.request("PATCH", `/v1/accessories/${encodeURIComponent(accessoryId)}/light`, patch);
   }

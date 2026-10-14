@@ -5,11 +5,14 @@ import { ControlsSheet } from "./components/ControlsSheet";
 import { HomeView } from "./components/HomeView";
 import type { MenuItem } from "./components/MoreMenu";
 import { Onboarding } from "./components/Onboarding";
+import { SettingsSheet } from "./components/SettingsSheet";
 import { Sidebar } from "./components/Sidebar";
 import { WindowControls } from "./components/WindowControls";
 import type { Mode } from "./connection";
 import { createBridge, loadMode, saveMode } from "./connection";
-import { isDesktop } from "./desktop";
+import { hideOnMinimize, isDesktop } from "./desktop";
+import type { Settings } from "./settings";
+import { useSettings } from "./settings";
 import type { View } from "./home";
 import { UnitContext } from "./home";
 import { useHomeStore } from "./store";
@@ -19,6 +22,12 @@ export function App() {
   const [bridge, setBridge] = useState<RyHomeBridge | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
+  const [settings, updateSettings] = useSettings();
+
+  useEffect(() => {
+    if (!isDesktop || !settings.minimizeToTray) return;
+    return hideOnMinimize();
+  }, [settings.minimizeToTray]);
 
   const changeMode = useCallback((next: Mode | null) => {
     saveMode(next);
@@ -68,16 +77,42 @@ export function App() {
       key={`${mode}-${attempt}`}
       bridge={bridge}
       demo={mode === "demo"}
+      settings={settings}
+      onSettingsChange={updateSettings}
       onToggleDemo={() => changeMode(mode === "demo" ? null : "demo")}
     />
   );
 }
 
-function HomeApp({ bridge, demo, onToggleDemo }: { bridge: RyHomeBridge; demo: boolean; onToggleDemo: () => void }) {
+function HomeApp({
+  bridge,
+  demo,
+  settings,
+  onSettingsChange,
+  onToggleDemo,
+}: {
+  bridge: RyHomeBridge;
+  demo: boolean;
+  settings: Settings;
+  onSettingsChange: (patch: Partial<Settings>) => void;
+  onToggleDemo: () => void;
+}) {
   const store = useHomeStore(bridge);
   const [view, setView] = useState<View>({ type: "home" });
   const [openId, setOpenId] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === ",") {
+        e.preventDefault();
+        setSettingsOpen(true);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
   const closeSheet = useCallback(() => setOpenId(null), []);
   const open = store.home?.accessories.find((a) => a.id === openId);
 
@@ -89,6 +124,7 @@ function HomeApp({ bridge, demo, onToggleDemo }: { bridge: RyHomeBridge; demo: b
 
   const menu: MenuItem[] = [
     ...(store.capabilities?.pairing ? [{ label: "Add Light...", onSelect: () => setAdding(true) }] : []),
+    { label: "Settings...", onSelect: () => setSettingsOpen(true) },
     ...(isDesktop || demo ? [{ label: demo ? "Exit Demo" : "Show Demo", onSelect: onToggleDemo, destructive: demo }] : []),
   ];
 
@@ -137,6 +173,15 @@ function HomeApp({ bridge, demo, onToggleDemo }: { bridge: RyHomeBridge; demo: b
             onToggleLight={store.toggleLight}
             presets={store.home.colorPresets}
             onSavePreset={store.setColorPreset}
+          />
+        )}
+        {settingsOpen && (
+          <SettingsSheet
+            home={store.home}
+            bridge={bridge}
+            settings={settings}
+            onChange={onSettingsChange}
+            onClose={() => setSettingsOpen(false)}
           />
         )}
         {adding && <AddLightSheet bridge={bridge} rooms={store.home.rooms} onClose={() => setAdding(false)} />}

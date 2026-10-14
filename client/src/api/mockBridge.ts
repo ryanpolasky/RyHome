@@ -215,6 +215,11 @@ export function createMockBridge(): RyHomeBridge {
       await wait(150);
       return structuredClone(home);
     },
+    async updateHome(patch) {
+      if (patch.name) home.name = patch.name;
+      if (patch.temperatureUnit) home.temperatureUnit = patch.temperatureUnit;
+      broadcast({ type: "homeChanged" });
+    },
     async setColorPresets(presets) {
       home.colorPresets = presets.map((p, i) => (p ? { ...p, custom: true } : { ...defaultPresets[i], custom: false }));
       broadcast({ type: "homeChanged" });

@@ -19,6 +19,7 @@ import {
   LogOut,
   MonitorSpeaker,
   Moon,
+  Settings,
   Speaker,
   Sun,
   Thermometer,
@@ -53,6 +54,7 @@ const glyphs = {
   close: X,
   check: Check,
   group: LayoutGrid,
+  settings: Settings,
 } satisfies Record<string, LucideIcon>;
 
 export type IconName = keyof typeof glyphs;

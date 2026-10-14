@@ -21,6 +21,7 @@ Matter accessories can belong to several controllers at once. You add each light
 
 1. Run RyHome. The first time, Windows Firewall asks whether to allow RyHome's engine on your network. Allow it on **private networks**, or it can't find your lights.
 2. Choose **Add Light** from the ••• menu and follow the steps.
+3. **Settings** (••• menu or Ctrl+,) has the home name, °F or °C, minimize to tray, and launch at login. Closing the window keeps RyHome in the tray; quit from the tray icon or Settings.
 
 Pair one light first and make sure it still behaves normally in its other apps before adding the rest.
 

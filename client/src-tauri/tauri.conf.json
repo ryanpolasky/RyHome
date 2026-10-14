@@ -20,7 +20,8 @@
         "minHeight": 480,
         "center": true,
         "decorations": false,
-        "additionalBrowserArgs": "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection"
+        "additionalBrowserArgs": "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection",
+        "visible": false
       }
     ],
     "security": {

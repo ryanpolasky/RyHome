@@ -6,9 +6,13 @@ use std::process::{Child, Command, Stdio};
 use std::sync::{Arc, Condvar, Mutex};
 use std::thread;
 use std::time::Duration;
+use tauri::menu::{Menu, MenuItem};
 use tauri::path::BaseDirectory;
-use tauri::{AppHandle, Manager, RunEvent, State};
+use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
+use tauri::{AppHandle, Manager, RunEvent, State, WindowEvent};
+use tauri_plugin_autostart::MacosLauncher;
 
+const HIDDEN_ARG: &str = "--hidden";
 const READY_PREFIX: &str = "RYHOME_READY";
 const READY_TIMEOUT: Duration = Duration::from_secs(45);
 
@@ -169,10 +173,29 @@ async fn core_connection(core: State<'_, Arc<Core>>) -> Result<CoreConnection, S
   .map_err(|e| e.to_string())?
 }
 
+fn show_main(app: &AppHandle) {
+  let Some(window) = app.get_webview_window("main") else {
+    return;
+  };
+  for result in [window.show(), window.unminimize(), window.set_focus()] {
+    if let Err(error) = result {
+      eprintln!("failed to show main window: {error}");
+    }
+  }
+}
+
+#[tauri::command]
+fn quit(app: AppHandle) {
+  app.exit(0);
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
   tauri::Builder::default()
-    .invoke_handler(tauri::generate_handler![core_connection])
+    // a second copy would start a second matter controller on the same storage, so hand off to the first
+    .plugin(tauri_plugin_single_instance::init(|app, _, _| show_main(app)))
+    .plugin(tauri_plugin_autostart::init(MacosLauncher::LaunchAgent, Some(vec![HIDDEN_ARG])))
+    .invoke_handler(tauri::generate_handler![core_connection, quit])
     .setup(|app| {
       let core = Arc::new(Core {
         url: format!("http://127.0.0.1:{}", free_port()?),
@@ -182,7 +205,47 @@ pub fn run() {
       });
       app.manage(core.clone());
       supervise(app.handle().clone(), core);
+
+      let open = MenuItem::with_id(app, "open", "Open RyHome", true, None::<&str>)?;
+      let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
+      let menu = Menu::with_items(app, &[&open, &quit])?;
+      let icon = app.default_window_icon().cloned().ok_or("missing app icon")?;
+      TrayIconBuilder::new()
+        .icon(icon)
+        .tooltip("RyHome")
+        .menu(&menu)
+        .show_menu_on_left_click(false)
+        .on_menu_event(|app, event| match event.id.as_ref() {
+          "open" => show_main(app),
+          "quit" => app.exit(0),
+          _ => {}
+        })
+        .on_tray_icon_event(|tray, event| {
+          if let TrayIconEvent::Click {
+            button: MouseButton::Left,
+            button_state: MouseButtonState::Up,
+            ..
+          } = event
+          {
+            show_main(tray.app_handle());
+          }
+        })
+        .build(app)?;
+
+      if !std::env::args().any(|arg| arg == HIDDEN_ARG) {
+        show_main(app.handle());
+      }
       Ok(())
+    })
+    .on_window_event(|window, event| {
+      if let WindowEvent::CloseRequested { api, .. } = event {
+        if window.label() == "main" {
+          api.prevent_close();
+          if let Err(error) = window.hide() {
+            eprintln!("failed to hide main window: {error}");
+          }
+        }
+      }
     })
     .build(tauri::generate_context!())
     .expect("error while building RyHome")

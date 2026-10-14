@@ -6,6 +6,7 @@ export interface RyHomeBridge {
   getCapabilities(): Promise<Capabilities>;
   getHome(): Promise<Home>;
   setColorPresets(presets: PresetInput[]): Promise<void>;
+  updateHome(patch: { name?: string; temperatureUnit?: "C" | "F" }): Promise<void>;
   setLight(accessoryId: string, patch: Partial<LightState>): Promise<void>;
   updateAccessory(accessoryId: string, details: AccessoryDetails): Promise<void>;
   runScene(sceneId: string): Promise<void>;
