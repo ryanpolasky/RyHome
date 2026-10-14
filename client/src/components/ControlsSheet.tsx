@@ -65,6 +65,52 @@ function BrightnessSlider({ light, onChange }: { light: LightAccessory; onChange
   );
 }
 
+function BrightnessStatus({ light, onChange }: { light: LightAccessory; onChange: (patch: Partial<LightState>) => void }) {
+  const unit = useContext(UnitContext);
+  const [draft, setDraft] = useState<string | null>(null);
+  if (!light.reachable || !light.supports.brightness) return <>{statusText(light, unit)}</>;
+
+  const commit = () => {
+    const value = draft === null ? NaN : Number(draft.replace("%", "").trim());
+    setDraft(null);
+    if (!Number.isFinite(value)) return;
+    const level = Math.round(Math.min(100, Math.max(0, value)));
+    onChange(level === 0 ? { on: false } : { on: true, brightness: level });
+  };
+
+  if (draft !== null) {
+    return (
+      <span className="brightness-entry">
+        <input
+          autoFocus
+          inputMode="numeric"
+          value={draft}
+          onFocus={(e) => e.target.select()}
+          onChange={(e) => setDraft(e.target.value.replace(/[^\d]/g, "").slice(0, 3))}
+          onBlur={commit}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") commit();
+            if (e.key === "Escape") {
+              e.stopPropagation();
+              setDraft(null);
+            }
+          }}
+        />
+        %
+      </span>
+    );
+  }
+  return (
+    <button
+      className="brightness-status"
+      title="Type a brightness"
+      onClick={() => setDraft(String(light.state.on ? light.state.brightness : 0))}
+    >
+      {statusText(light, unit)}
+    </button>
+  );
+}
+
 function LightControls({
   light,
   members,
@@ -308,7 +354,13 @@ export function ControlsSheet({
       icon={<AccessoryIcon accessory={accessory} size={20} />}
       tint={iconTint(accessory)}
       title={accessory.name}
-      status={statusText(accessory, unit)}
+      status={
+        accessory.kind === "light" && mode === "controls" ? (
+          <BrightnessStatus light={accessory} onChange={onSetLight} />
+        ) : (
+          statusText(accessory, unit)
+        )
+      }
       onClose={onClose}
       footer={
         accessory.kind === "light" &&

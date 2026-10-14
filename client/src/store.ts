@@ -3,6 +3,10 @@ import type { ConnectionStatus, RyHomeBridge } from "./api/bridge";
 import type { Accessory, Capabilities, Home, LightState } from "./api/types";
 
 const LIGHT_THROTTLE_MS = 80;
+const HOLD_MS = 4000;
+const TOLERANCE: Partial<Record<keyof LightState, number>> = { brightness: 1, saturation: 2, hue: 3, colorTemperature: 5 };
+
+type Hold = { patch: Partial<LightState>; until: number };
 
 function errorMessage(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
@@ -15,6 +19,15 @@ function replaceAccessory(home: Home, accessory: Accessory): Home {
   };
 }
 
+function settled(state: LightState, patch: Partial<LightState>): boolean {
+  if (patch.on === false) return !state.on;
+  return (Object.keys(patch) as (keyof LightState)[]).every((key) => {
+    const want = patch[key];
+    const have = state[key];
+    return typeof want === "number" && typeof have === "number" ? Math.abs(want - have) <= (TOLERANCE[key] ?? 0) : want === have;
+  });
+}
+
 export function useHomeStore(bridge: RyHomeBridge) {
   const [home, setHome] = useState<Home | null>(null);
   const [capabilities, setCapabilities] = useState<Capabilities | null>(null);
@@ -22,17 +35,30 @@ export function useHomeStore(bridge: RyHomeBridge) {
   const [actionError, setActionError] = useState<string | null>(null);
   const [status, setStatus] = useState<ConnectionStatus>("connecting");
   const pending = useRef(new Map<string, { patch: Partial<LightState>; timer: number | null; last: number }>());
+  const holds = useRef(new Map<string, Hold>());
+
+  // lights report their old values for a beat after a change, so keep showing what the user set until they catch up
+  const withHolds = useCallback((accessory: Accessory): Accessory => {
+    if (accessory.kind !== "light") return accessory;
+    const hold = holds.current.get(accessory.id);
+    if (!hold) return accessory;
+    if (Date.now() > hold.until || settled(accessory.state, hold.patch)) {
+      holds.current.delete(accessory.id);
+      return accessory;
+    }
+    return { ...accessory, state: { ...accessory.state, ...hold.patch } };
+  }, []);
 
   const load = useCallback(() => {
     setLoadError(null);
     Promise.all([bridge.getHome(), bridge.getCapabilities()]).then(
       ([h, c]) => {
-        setHome(h);
+        setHome({ ...h, accessories: h.accessories.map(withHolds) });
         setCapabilities(c);
       },
       (e) => setLoadError(errorMessage(e))
     );
-  }, [bridge]);
+  }, [bridge, withHolds]);
 
   useEffect(() => {
     load();
@@ -41,19 +67,18 @@ export function useHomeStore(bridge: RyHomeBridge) {
         load();
         return;
       }
-      // skip echoes while a drag is still sending so the slider doesn't jump back
-      if (pending.current.get(event.accessory.id)?.timer != null) return;
-      setHome((h) => (h ? replaceAccessory(h, event.accessory) : h));
+      setHome((h) => (h ? replaceAccessory(h, withHolds(event.accessory)) : h));
     });
     const unstatus = bridge.onStatus(setStatus);
     return () => {
       unsubscribe();
       unstatus();
     };
-  }, [bridge, load]);
+  }, [bridge, load, withHolds]);
 
   const fail = useCallback(
-    (e: unknown) => {
+    (id: string, e: unknown) => {
+      holds.current.delete(id);
       setActionError(errorMessage(e));
       load();
     },
@@ -68,13 +93,15 @@ export function useHomeStore(bridge: RyHomeBridge) {
       entry.patch = {};
       entry.timer = null;
       entry.last = Date.now();
-      bridge.setLight(id, patch).catch(fail);
+      bridge.setLight(id, patch).catch((e) => fail(id, e));
     },
     [bridge, fail]
   );
 
   const setLight = useCallback(
     (id: string, patch: Partial<LightState>) => {
+      const previous = holds.current.get(id)?.patch ?? {};
+      holds.current.set(id, { patch: patch.on === false ? { on: false } : { ...previous, ...patch }, until: Date.now() + HOLD_MS });
       setHome((h) => {
         if (!h) return h;
         const accessory = h.accessories.find((a) => a.id === id);
@@ -101,7 +128,10 @@ export function useHomeStore(bridge: RyHomeBridge) {
     [home, setLight]
   );
 
-  const runScene = useCallback((id: string) => bridge.runScene(id).catch(fail), [bridge, fail]);
+  const runScene = useCallback(
+    (id: string) => bridge.runScene(id).catch((e) => fail(id, e)),
+    [bridge, fail]
+  );
 
   return {
     home,

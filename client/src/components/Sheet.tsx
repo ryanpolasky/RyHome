@@ -14,7 +14,7 @@ export function Sheet({
   icon: ReactNode;
   tint?: string;
   title: string;
-  status?: string;
+  status?: ReactNode;
   onClose: () => void;
   footer?: ReactNode;
   children: ReactNode;

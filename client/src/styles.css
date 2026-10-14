@@ -1239,3 +1239,36 @@ button:focus-visible {
   font-size: 12px;
   color: rgba(255, 255, 255, 0.6);
 }
+
+.brightness-status {
+  margin-left: -4px;
+  padding: 0 4px;
+  border-radius: 5px;
+  color: inherit;
+  font-size: inherit;
+  cursor: text;
+}
+
+.brightness-status:hover {
+  background: rgba(255, 255, 255, 0.16);
+  color: #fff;
+}
+
+.brightness-entry {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  color: #fff;
+}
+
+.brightness-entry input {
+  width: 42px;
+  padding: 1px 5px;
+  border: none;
+  border-radius: 5px;
+  outline: none;
+  background: rgba(255, 255, 255, 0.92);
+  color: #1d1d1f;
+  font: inherit;
+  text-align: right;
+}
