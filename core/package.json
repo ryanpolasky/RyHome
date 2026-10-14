@@ -1,14 +1,14 @@
 {
-  "name": "ryhome-server",
+  "name": "ryhome-core",
   "private": true,
   "version": "0.1.0",
   "type": "module",
   "engines": {
-    "node": ">=20"
+    "node": ">=22.13"
   },
   "scripts": {
     "build": "tsc",
-    "start": "node dist/main.js",
+    "bundle": "node bundle.mjs",
     "dev": "tsc && node dist/main.js"
   },
   "dependencies": {
@@ -20,6 +20,7 @@
   "devDependencies": {
     "@types/node": "24.19.2",
     "@types/ws": "8.18.2",
+    "esbuild": "0.28.2",
     "typescript": "6.0.3"
   }
 }

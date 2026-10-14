@@ -1,7 +1,12 @@
 import { timingSafeEqual } from "node:crypto";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { WebSocketServer, type WebSocket } from "ws";
-import type { ServerConfig } from "./config.js";
+export interface HttpConfig {
+  token: string;
+  port: number;
+  host: string;
+  allowedOrigins?: string[];
+}
 
 const MAX_BODY = 64 * 1024;
 const AUTH_TIMEOUT_MS = 10_000;
@@ -56,7 +61,7 @@ function readBody(req: IncomingMessage): Promise<unknown> {
   });
 }
 
-export function startHttp(config: ServerConfig, routes: Route[]) {
+export function startHttp(config: HttpConfig, routes: Route[]) {
   const clients = new Set<WebSocket>();
   const originAllowed = (origin: string | undefined) =>
     !origin || !config.allowedOrigins || config.allowedOrigins.includes(origin);
@@ -143,7 +148,7 @@ export function startHttp(config: ServerConfig, routes: Route[]) {
   }, HEARTBEAT_MS);
   server.on("close", () => clearInterval(heartbeat));
 
-  server.listen(config.port);
+  server.listen(config.port, config.host);
 
   return {
     server,

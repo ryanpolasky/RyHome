@@ -10,3 +10,5 @@ AGENTS.md
 
 # Tauri
 client/src-tauri/target/
+client/src-tauri/binaries/
+client/src-tauri/core/

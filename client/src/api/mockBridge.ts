@@ -1,5 +1,5 @@
 import type { ConnectionStatus, RyHomeBridge } from "./bridge";
-import type { Accessory, BridgeEvent, Home, HomeKitCandidate, LightAccessory, LightIcon, LightState } from "./types";
+import type { Accessory, BridgeEvent, Home, LightAccessory, LightIcon, LightState } from "./types";
 
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -18,7 +18,6 @@ function light(
     icon,
     reachable: true,
     matterNodeId: id,
-    linked: true,
     supports: { brightness: true, color: true, temperature: true },
     state: {
       on: false,
@@ -121,17 +120,18 @@ function seed(): Home {
   };
 }
 
-const candidates: HomeKitCandidate[] = [
-  { id: "hk-porch", name: "Porch Light", room: "Front Door", model: "H6008", linkedNodeId: null },
-  { id: "hk-bedside", name: "Bedside Lamp", room: "Office", model: "H6008", linkedNodeId: null },
-];
-
 export function createMockBridge(): RyHomeBridge {
   const home = seed();
   const listeners = new Set<(event: BridgeEvent) => void>();
   const broadcast = (event: BridgeEvent) => listeners.forEach((l) => l(event));
   const emit = (accessory: Accessory) => broadcast({ type: "accessoryUpdated", accessory });
   const timers: number[] = [];
+  const roomFor = (name: string | undefined, fallback: string) => {
+    if (!name) return fallback;
+    const id = name.toLowerCase().replace(/[^a-z0-9]+/g, "-");
+    if (!home.rooms.some((r) => r.id === id)) home.rooms.push({ id, name });
+    return id;
+  };
 
   timers.push(
     window.setInterval(() => {
@@ -146,35 +146,34 @@ export function createMockBridge(): RyHomeBridge {
 
   return {
     async getCapabilities() {
-      return { lights: true, climate: true, scenes: true, pairing: true, homeKitNames: true };
+      return { lights: true, scenes: true, pairing: true, rename: true };
     },
     async getHome() {
       await wait(150);
       return structuredClone(home);
     },
-    async getHomeKitAccessories() {
-      await wait(200);
-      return structuredClone(candidates);
-    },
-    async commission(code, homeKitId) {
+    async commission(code, details) {
       await wait(1800);
-      if (code.replace(/\D/g, "").length !== 11) throw new Error("That isn't a valid Matter pairing code. Use the 11-digit setup code from the Home app.");
+      if (code.replace(/D/g, "").length !== 11) throw new Error("That isn't a valid Matter pairing code. Use the 11-digit setup code from the Home app.");
       const nodeId = String(nextNode++);
-      const candidate = candidates.find((c) => c.id === homeKitId);
-      if (candidate) candidate.linkedNodeId = nodeId;
       const accessory: LightAccessory = {
-        ...light(`matter-${nodeId}-1`, candidate?.name ?? "Govee Bulb", "office", "bulb", { on: true }),
+        ...light(`matter-${nodeId}-1`, details.name ?? "Govee Bulb", roomFor(details.room, "office"), details.icon ?? "bulb", { on: true }),
         matterNodeId: nodeId,
-        linked: !!candidate,
       };
       home.accessories.push(accessory);
       broadcast({ type: "homeChanged" });
       return { nodeId, accessories: [structuredClone(accessory)] };
     },
-    async linkNode(nodeId, homeKitId) {
-      const candidate = candidates.find((c) => c.id === homeKitId);
+    async updateAccessory(accessoryId, details) {
       home.accessories = home.accessories.map((a) =>
-        a.kind === "light" && a.matterNodeId === nodeId ? { ...a, name: candidate?.name ?? a.name, linked: !!candidate } : a
+        a.id !== accessoryId
+          ? a
+          : {
+              ...a,
+              name: details.name ?? a.name,
+              roomId: roomFor(details.room, a.roomId),
+              ...(a.kind === "light" && details.icon ? { icon: details.icon } : {}),
+            }
       );
       broadcast({ type: "homeChanged" });
     },

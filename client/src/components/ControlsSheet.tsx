@@ -1,9 +1,10 @@
 import type { CSSProperties } from "react";
-import { useContext, useEffect, useRef, useState } from "react";
+import { useContext, useRef, useState } from "react";
 import type { RyHomeBridge } from "../api/bridge";
-import type { Accessory, HomeKitCandidate, LightAccessory, LightState } from "../api/types";
+import type { Accessory, LightAccessory, LightIcon, LightState, Room } from "../api/types";
 import { lightColor, statusText, UnitContext } from "../home";
 import { Icon } from "./Icon";
+import { RoomPicker } from "./RoomPicker";
 import { Sheet } from "./Sheet";
 import { AccessoryIcon, iconTint } from "./Tile";
 
@@ -95,17 +96,24 @@ function LightControls({ light, onSetLight }: { light: LightAccessory; onSetLigh
   );
 }
 
-function LightSettings({ light, bridge, onRemoved }: { light: LightAccessory; bridge: RyHomeBridge; onRemoved: () => void }) {
-  const nodeId = light.matterNodeId!;
-  const [candidates, setCandidates] = useState<HomeKitCandidate[] | null>(null);
-  const [loadError, setLoadError] = useState<string | null>(null);
+const iconChoices: LightIcon[] = ["bulb", "ceiling", "tableLamp", "floorLamp", "lightstrip"];
+
+function LightSettings({
+  light,
+  rooms,
+  bridge,
+  onRemoved,
+}: {
+  light: LightAccessory;
+  rooms: Room[];
+  bridge: RyHomeBridge;
+  onRemoved: () => void;
+}) {
+  const [name, setName] = useState(light.name);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [confirming, setConfirming] = useState(false);
-
-  useEffect(() => {
-    bridge.getHomeKitAccessories().then(setCandidates, (e) => setLoadError((e as Error).message));
-  }, [bridge]);
+  const room = rooms.find((r) => r.id === light.roomId)?.name ?? "";
 
   const run = async (action: () => Promise<void>) => {
     setBusy(true);
@@ -118,56 +126,69 @@ function LightSettings({ light, bridge, onRemoved }: { light: LightAccessory; br
       setBusy(false);
     }
   };
+  const saveName = () => name.trim() && name.trim() !== light.name && run(() => bridge.updateAccessory(light.id, { name: name.trim() }));
 
-  const current = candidates?.find((c) => c.linkedNodeId === nodeId)?.id ?? "";
   return (
     <div className="settings-panel">
       <label className="settings-row">
-        <span>Home app accessory</span>
-        {loadError ? (
-          <span className="settings-hint">{loadError}</span>
-        ) : (
-          <select
-            value={current}
-            disabled={!candidates || busy}
-            onChange={(e) => run(async () => {
-              await bridge.linkNode(nodeId, e.target.value || null);
-              setCandidates(await bridge.getHomeKitAccessories());
-            })}
-          >
-            <option value="">{candidates ? "Not linked" : "Loading..."}</option>
-            {candidates
-              ?.filter((c) => !c.linkedNodeId || c.linkedNodeId === nodeId)
-              .map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.room ? `${c.name} (${c.room})` : c.name}
-                </option>
-              ))}
-          </select>
-        )}
+        <span>Name</span>
+        <input
+          className="settings-input"
+          value={name}
+          disabled={busy}
+          onChange={(e) => setName(e.target.value)}
+          onBlur={saveName}
+          onKeyDown={(e) => e.key === "Enter" && (e.target as HTMLInputElement).blur()}
+        />
       </label>
-      <p className="settings-hint">Linking uses the name and room from the Home app.</p>
-      {confirming ? (
-        <div className="settings-confirm">
-          <p>RyHome will stop controlling this light. It stays in the Home app and keeps working there.</p>
-          <div className="settings-actions">
-            <button className="glass-button" disabled={busy} onClick={() => setConfirming(false)}>
-              Cancel
+      <label className="settings-row">
+        <span>Room</span>
+        <RoomPicker rooms={rooms} value={room} disabled={busy} onChange={(r) => run(() => bridge.updateAccessory(light.id, { room: r }))} />
+      </label>
+      <div className="settings-row">
+        <span>Icon</span>
+        <div className="icon-choices">
+          {iconChoices.map((icon) => (
+            <button
+              key={icon}
+              aria-label={icon}
+              className={`icon-choice ${light.icon === icon ? "selected" : ""}`}
+              disabled={busy}
+              onClick={() => run(() => bridge.updateAccessory(light.id, { icon }))}
+            >
+              <Icon name={icon} size={18} />
             </button>
-            <button className="glass-button destructive" disabled={busy} onClick={() => run(async () => {
-              await bridge.removeNode(nodeId);
-              onRemoved();
-            })}>
-              {busy ? "Removing..." : "Remove"}
-            </button>
-          </div>
+          ))}
         </div>
-      ) : (
-        <button className="glass-button destructive" onClick={() => setConfirming(true)}>
-          Remove from RyHome
-        </button>
-      )}
-      <p className={`settings-error ${error ? "visible" : ""}`}>{error ?? "\u00a0"}</p>
+      </div>
+      {light.matterNodeId &&
+        (confirming ? (
+          <div className="settings-confirm">
+            <p>RyHome will stop controlling this light. It keeps working in any other app it's paired with.</p>
+            <div className="settings-actions">
+              <button className="glass-button" disabled={busy} onClick={() => setConfirming(false)}>
+                Cancel
+              </button>
+              <button
+                className="glass-button destructive"
+                disabled={busy}
+                onClick={() =>
+                  run(async () => {
+                    await bridge.removeNode(light.matterNodeId!);
+                    onRemoved();
+                  })
+                }
+              >
+                {busy ? "Removing..." : "Remove"}
+              </button>
+            </div>
+          </div>
+        ) : (
+          <button className="glass-button destructive" onClick={() => setConfirming(true)}>
+            Remove from RyHome
+          </button>
+        ))}
+      <p className={`settings-error ${error ? "visible" : ""}`}>{error ?? " "}</p>
     </div>
   );
 }
@@ -201,18 +222,20 @@ function Readout({ accessory }: { accessory: Exclude<Accessory, LightAccessory> 
 
 export function ControlsSheet({
   accessory,
+  rooms,
   bridge,
   onClose,
   onSetLight,
 }: {
   accessory: Accessory;
+  rooms: Room[];
   bridge: RyHomeBridge;
   onClose: () => void;
   onSetLight: (patch: Partial<LightState>) => void;
 }) {
   const unit = useContext(UnitContext);
   const [settings, setSettings] = useState(false);
-  const configurable = accessory.kind === "light" && !!accessory.matterNodeId;
+  const configurable = accessory.kind === "light";
 
   return (
     <Sheet
@@ -232,7 +255,7 @@ export function ControlsSheet({
       {accessory.kind !== "light" ? (
         <Readout accessory={accessory} />
       ) : settings ? (
-        <LightSettings light={accessory} bridge={bridge} onRemoved={onClose} />
+        <LightSettings light={accessory} rooms={rooms} bridge={bridge} onRemoved={onClose} />
       ) : (
         <LightControls light={accessory} onSetLight={onSetLight} />
       )}

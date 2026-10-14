@@ -2528,6 +2528,9 @@ checksum = "cf54715a573b99ac80df0bc206da022bcd442c974952c7b9720069370852e21f"
 name = "ryhome"
 version = "0.1.0"
 dependencies = [
+ "dunce",
+ "getrandom 0.3.4",
+ "serde",
  "tauri",
  "tauri-build",
 ]

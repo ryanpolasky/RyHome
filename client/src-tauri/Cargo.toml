@@ -14,3 +14,6 @@ tauri-build = { version = "~2.6.3", features = [] }
 
 [dependencies]
 tauri = { version = "~2.11.6", features = [] }
+serde = { version = "1.0.229", features = ["derive"] }
+getrandom = "0.3.4"
+dunce = "1.0.5"

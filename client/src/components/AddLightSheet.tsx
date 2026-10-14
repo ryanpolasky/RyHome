@@ -1,35 +1,24 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import type { RyHomeBridge } from "../api/bridge";
-import type { Accessory, HomeKitCandidate } from "../api/types";
+import type { Accessory, Room } from "../api/types";
 import { Icon } from "./Icon";
+import { RoomPicker } from "./RoomPicker";
 import { Sheet } from "./Sheet";
 
-type Step = { name: "choose" } | { name: "code"; candidate: HomeKitCandidate | null } | { name: "done"; added: Accessory[] };
-
-export function AddLightSheet({ bridge, onClose }: { bridge: RyHomeBridge; onClose: () => void }) {
-  const [step, setStep] = useState<Step>({ name: "choose" });
-  const [candidates, setCandidates] = useState<HomeKitCandidate[] | null>(null);
-  const [candidateError, setCandidateError] = useState<string | null>(null);
+export function AddLightSheet({ bridge, rooms, onClose }: { bridge: RyHomeBridge; rooms: Room[]; onClose: () => void }) {
   const [code, setCode] = useState("");
+  const [name, setName] = useState("");
+  const [room, setRoom] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [added, setAdded] = useState<Accessory[] | null>(null);
 
-  useEffect(() => {
-    bridge.getHomeKitAccessories().then(
-      (list) => setCandidates(list.filter((c) => !c.linkedNodeId)),
-      (e) => {
-        setCandidateError((e as Error).message);
-        setStep({ name: "code", candidate: null });
-      }
-    );
-  }, [bridge]);
-
-  async function pair(candidate: HomeKitCandidate | null) {
+  async function pair() {
     setBusy(true);
     setError(null);
     try {
-      const result = await bridge.commission(code, candidate?.id ?? null);
-      setStep({ name: "done", added: result.accessories });
+      const result = await bridge.commission(code, { name: name || undefined, room: room || undefined });
+      setAdded(result.accessories);
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -37,41 +26,25 @@ export function AddLightSheet({ bridge, onClose }: { bridge: RyHomeBridge; onClo
     }
   }
 
-  const close = busy ? () => {} : onClose;
   return (
-    <Sheet icon={<Icon name="bulb" size={20} />} title="Add Light" status="Matter lights from the Home app" onClose={close}>
-      {step.name === "choose" && (
+    <Sheet icon={<Icon name="bulb" size={20} />} title="Add Light" status="Any Matter light on this network" onClose={busy ? () => {} : onClose}>
+      {added ? (
         <div className="add-panel">
-          <p className="add-lead">Which light from the Home app do you want to add?</p>
-          {!candidates ? (
-            <p className="add-hint">Loading your Home app accessories...</p>
-          ) : candidates.length === 0 ? (
-            <p className="add-hint">Every Matter accessory in the Home app is already added.</p>
-          ) : (
-            <div className="candidate-list">
-              {candidates.map((c) => (
-                <button key={c.id} className="candidate" onClick={() => setStep({ name: "code", candidate: c })}>
-                  <span className="candidate-name">{c.name}</span>
-                  <span className="candidate-room">{[c.room, c.model].filter(Boolean).join(" · ")}</span>
-                </button>
-              ))}
-            </div>
-          )}
-          <button className="link-button" onClick={() => setStep({ name: "code", candidate: null })}>
-            It's not listed
+          <p className="add-lead">
+            {added.length > 0 ? `Added ${added.map((a) => a.name).join(", ")}.` : "Paired, but it didn't report any lights."}
+          </p>
+          <button className="glass-button primary" onClick={onClose}>
+            Done
           </button>
         </div>
-      )}
-      {step.name === "code" && (
+      ) : (
         <div className="add-panel">
           <ol className="add-steps">
             <li>
-              In the Home app, open <strong>{step.candidate?.name ?? "the light"}</strong> and go to its settings.
+              In the app the light already uses, turn on pairing mode. In Apple Home that's the light's settings, then{" "}
+              <strong>Turn On Pairing Mode</strong>.
             </li>
-            <li>
-              Tap <strong>Turn On Pairing Mode</strong>. The light stays in the Home app.
-            </li>
-            <li>Type the setup code it shows below.</li>
+            <li>Type the setup code it shows below. The light keeps working in that app too.</li>
           </ol>
           <input
             className="code-input"
@@ -81,31 +54,27 @@ export function AddLightSheet({ bridge, onClose }: { bridge: RyHomeBridge; onClo
             disabled={busy}
             spellCheck={false}
             onChange={(e) => setCode(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && code.trim() && !busy && pair(step.candidate)}
+            onKeyDown={(e) => e.key === "Enter" && code.trim() && !busy && pair()}
           />
-          {candidateError && <p className="add-hint">{candidateError} The light will use its built-in name.</p>}
+          <label className="settings-row">
+            <span>Name</span>
+            <input
+              className="settings-input"
+              placeholder="Use the light's own name"
+              value={name}
+              disabled={busy}
+              onChange={(e) => setName(e.target.value)}
+            />
+          </label>
+          <label className="settings-row">
+            <span>Room</span>
+            <RoomPicker rooms={rooms} value={room} disabled={busy} onChange={setRoom} />
+          </label>
           <p className={`settings-error ${error ? "visible" : ""}`}>{error ?? "\u00a0"}</p>
-          <div className="settings-actions">
-            {candidates && (
-              <button className="glass-button" disabled={busy} onClick={() => setStep({ name: "choose" })}>
-                Back
-              </button>
-            )}
-            <button className="glass-button primary" disabled={busy || !code.trim()} onClick={() => pair(step.candidate)}>
-              {busy ? "Pairing..." : "Add Light"}
-            </button>
-          </div>
-          {busy && <p className="add-hint">This can take up to a minute.</p>}
-        </div>
-      )}
-      {step.name === "done" && (
-        <div className="add-panel">
-          <p className="add-lead">
-            {step.added.length > 0 ? `Added ${step.added.map((a) => a.name).join(", ")}.` : "Paired, but it didn't report any lights."}
-          </p>
-          <button className="glass-button primary" onClick={onClose}>
-            Done
+          <button className="glass-button primary" disabled={busy || !code.trim()} onClick={pair}>
+            {busy ? "Pairing..." : "Add Light"}
           </button>
+          {busy && <p className="add-hint">This can take up to a minute.</p>}
         </div>
       )}
     </Sheet>

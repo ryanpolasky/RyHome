@@ -6,8 +6,8 @@
   "build": {
     "frontendDist": "../dist",
     "devUrl": "http://localhost:5173",
-    "beforeDevCommand": "npm run dev",
-    "beforeBuildCommand": "npm run build"
+    "beforeDevCommand": "npm run prepare-core && npm run dev",
+    "beforeBuildCommand": "npm run prepare-core && npm run build"
   },
   "app": {
     "windows": [
@@ -36,6 +36,12 @@
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "externalBin": [
+      "binaries/ryhome-core"
+    ],
+    "resources": {
+      "core/core.mjs": "core/core.mjs"
+    }
   }
 }

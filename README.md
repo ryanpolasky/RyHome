@@ -1,62 +1,54 @@
 # RyHome
 
-A Windows client for Apple Home, styled after the macOS Home app. A small companion server on your Mac does the actual talking to your accessories.
+A Windows app for your Matter smart home, styled after Apple's Home app. It talks to your lights directly over Matter, so no hub, Mac, or cloud account is needed, and it works alongside Apple Home, Google Home, Alexa, or whatever app your lights already use.
 
 ## How it works
 
-Apple doesn't offer a HomeKit API outside its own signed apps, so RyHome uses **Matter** instead. Matter accessories can belong to more than one controller at once, so you add each light to RyHome from the Home app ("Turn On Pairing Mode") and it keeps working in Apple Home exactly as before. RyHome only ever removes its own pairing.
+Matter accessories can belong to several controllers at once. You add each light to RyHome by turning on pairing mode in the app it already uses (in Apple Home: the light's settings, then **Turn On Pairing Mode**) and typing the setup code into RyHome. The light keeps working everywhere else exactly as before, and RyHome only ever removes its own pairing.
 
-- Lights (on/off, brightness, color, color temperature) are controlled directly over Matter, with live updates when they change anywhere else.
-- Names and rooms come from the Home app's local database, read-only, if you grant Full Disk Access.
-- HomePod temperature and humidity can come from an optional Shortcut.
-- HomeKit-only accessories (not Matter) aren't supported.
+- Lights (on/off, brightness, color, color temperature) are controlled directly, with live updates when they change anywhere else.
+- Names, rooms, and icons are set in RyHome.
+- Your PC has to be on the same local network as your lights, with IPv6 working (most home networks do).
+- Only Matter accessories work. HomeKit-only accessories can't be added.
 
 ## Structure
 
-- `client/` - Windows client. Vite + React + TypeScript, wrapped in Tauri 2 for the native shell.
-- `server/` - macOS companion server. Node.js + TypeScript, using [matter.js](https://github.com/project-chip/matter.js) as the Matter controller.
-- `docs/` - API contract between the two.
+- `client/` - The Windows app. Vite + React + TypeScript in a Tauri 2 shell.
+- `core/` - The Matter engine. Node.js + TypeScript using [matter.js](https://github.com/project-chip/matter.js). The app bundles it into one file and runs it in the background on localhost, using a copy of Node.js shipped alongside the app.
+- `docs/` - The local API between the two.
 
-## Setup
+## Using it
 
-1. On the Mac, run `server/install.sh`. It builds the server, sets it to start at login, and prints a pairing code. See `server/README.md`.
-2. On Windows, open RyHome and paste the pairing code.
-3. Choose **Add Light** from the ••• menu and follow the steps for each light.
+1. Run RyHome. The first time, Windows Firewall asks whether to allow RyHome's engine on your network. Allow it on **private networks**, or it can't find your lights.
+2. Choose **Add Light** from the ••• menu and follow the steps.
 
-Pair one light first and make sure it still behaves normally in the Home app before adding the rest.
+Pair one light first and make sure it still behaves normally in its other apps before adding the rest.
 
-Prefer a private network between the two machines, such as Tailscale. If the server advertises the wrong address, set `advertisedHost` or `advertisedURL` in `~/.ryhome/config.json`.
+App data (pairings, names, scenes) lives in `%APPDATA%\app.ryhome.client`. Engine logs are in `%LOCALAPPDATA%\app.ryhome.client\logs\core.log`.
 
 ## Development
 
-### Client
+Requires Node.js 22.13 or newer, Rust (MSVC toolchain), and the Visual Studio C++ Build Tools with a Windows SDK.
 
 ```
 cd client
 npm install
-npm run dev
-```
-
-Click "Try the Demo" on the welcome screen to use built-in fake accessories so UI work isn't blocked by the Mac. Use the ••• menu to exit.
-
-### Desktop app
-
-Requires Rust (MSVC toolchain) and the Visual Studio C++ Build Tools with a Windows SDK.
-
-```
-cd client
 npm run tauri dev
 ```
 
-### Server
+`tauri dev` and `tauri build` run `npm run prepare-core` first, which bundles `core/` and copies your Node.js runtime in as the engine binary.
+
+For UI work in a browser, run `npm run dev` and choose **Try the Demo**, which uses built-in fake accessories. The desktop app has the same demo under the ••• menu.
+
+To run the engine by itself for API work:
 
 ```
-cd server
+cd core
 npm install
 npm run dev
 ```
 
-The server runs on any OS for API work, but Home app names, Shortcuts, and the installer are macOS only.
+Set `RYHOME_TOKEN`, `RYHOME_PORT`, and `RYHOME_HOME` to control the token, port, and data folder. `RYHOME_MATTER_LOG=info` turns up Matter logging.
 
 ## Disclaimer
 

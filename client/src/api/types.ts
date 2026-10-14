@@ -30,7 +30,6 @@ interface AccessoryBase {
 export interface LightAccessory extends AccessoryBase {
   kind: "light";
   matterNodeId?: string;
-  linked?: boolean;
   icon: LightIcon;
   supports: LightSupport;
   state: LightState;
@@ -81,18 +80,15 @@ export interface Home {
 
 export interface Capabilities {
   lights: boolean;
-  climate: boolean;
   scenes: boolean;
   pairing: boolean;
-  homeKitNames: boolean;
+  rename: boolean;
 }
 
-export interface HomeKitCandidate {
-  id: string;
-  name: string;
-  room: string | null;
-  model: string | null;
-  linkedNodeId: string | null;
+export interface AccessoryDetails {
+  name?: string;
+  room?: string;
+  icon?: LightIcon;
 }
 
 export type BridgeEvent = { type: "accessoryUpdated"; accessory: Accessory } | { type: "homeChanged" };

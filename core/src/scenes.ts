@@ -1,10 +1,8 @@
 import { randomUUID } from "node:crypto";
-import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
-import { dataDir, writePrivate } from "./config.js";
+import { readJson, writeJson } from "./config.js";
 import type { LightState, Scene, SceneAction } from "./types.js";
 
-const file = join(dataDir, "scenes.json");
+const FILE = "scenes.json";
 const types: Scene["type"][] = ["wakeUp", "sleep", "departure", "arrival", "custom"];
 const lightKeys: (keyof LightState)[] = ["on", "brightness", "hue", "saturation", "colorTemperature", "colorMode"];
 
@@ -44,10 +42,10 @@ function cleanScene(input: unknown, id: string): Scene {
 }
 
 export class SceneStore {
-  scenes: Scene[] = existsSync(file) ? JSON.parse(readFileSync(file, "utf8")) : [];
+  scenes = readJson<Scene[]>(FILE, []);
 
   #save() {
-    writePrivate(file, `${JSON.stringify(this.scenes, null, 2)}\n`);
+    writeJson(FILE, this.scenes);
   }
 
   get(id: string) {

@@ -1,6 +1,6 @@
 # RyHome API
 
-The server exposes an authenticated HTTP API for commands and initial data, plus a WebSocket for real-time events. All payloads are JSON.
+The engine exposes an authenticated HTTP API on localhost for commands and data, plus a WebSocket for real-time events. All payloads are JSON.
 
 ## Authentication
 
@@ -10,7 +10,7 @@ Every HTTP request requires a bearer token:
 Authorization: Bearer <token>
 ```
 
-Unauthenticated requests receive `401`.
+Unauthenticated requests receive `401`. The desktop app generates a fresh token each launch and passes it to the engine.
 
 Browser WebSocket clients can't set headers, so they send an auth frame first:
 
@@ -18,22 +18,20 @@ Browser WebSocket clients can't set headers, so they send an auth frame first:
 { "type": "auth", "token": "<token>" }
 ```
 
-The server closes the socket with code `1008` if the first message isn't a valid auth frame or none arrives within 10 seconds. Tokens never go in URLs.
+The engine closes the socket with code `1008` if the first message isn't a valid auth frame or none arrives within 10 seconds.
 
 ## GET /v1/capabilities
 
 ```json
-{ "capabilities": { "lights": true, "climate": false, "scenes": true, "pairing": true, "homeKitNames": true } }
+{ "capabilities": { "lights": true, "scenes": true, "pairing": true, "rename": true } }
 ```
-
-`climate` is true once the climate shortcut is found. `homeKitNames` is true when the server can read the Home app's database.
 
 ## GET /v1/home
 
 ```json
 {
   "id": "home",
-  "name": "My Home",
+  "name": "Home",
   "temperatureUnit": "F",
   "rooms": [{ "id": "office", "name": "Office" }],
   "accessories": [
@@ -41,21 +39,27 @@ The server closes the socket with code `1008` if the first message isn't a valid
       "id": "matter-1-1",
       "kind": "light",
       "matterNodeId": "1",
-      "linked": true,
       "name": "Desk Lamp",
       "roomId": "office",
       "icon": "bulb",
       "reachable": true,
       "supports": { "brightness": true, "color": true, "temperature": true },
       "state": { "on": true, "brightness": 80, "hue": 30, "saturation": 60, "colorTemperature": 370, "colorMode": "temperature" }
-    },
-    { "id": "climate-office-temperature", "kind": "sensor", "sensor": "temperature", "name": "Temperature", "roomId": "office", "reachable": true, "value": 21.5 }
+    }
   ],
   "scenes": [{ "id": "uuid", "name": "Movie", "type": "custom", "actions": [{ "accessoryId": "matter-1-1", "state": { "on": true, "brightness": 20 } }] }]
 }
 ```
 
-Units: `brightness` and `saturation` are 0-100, `hue` is 0-360, `colorTemperature` is in mireds, and temperature sensor values are always Celsius. `temperatureUnit` is only a display preference.
+Units: `brightness` and `saturation` are 0-100, `hue` is 0-360, and `colorTemperature` is in mireds. Rooms come from the accessories in them; lights without a room go in "Default Room".
+
+## PATCH /v1/home
+
+`{ "name"?, "temperatureUnit"?: "C" | "F" }`. Returns `204`.
+
+## PATCH /v1/accessories/:id
+
+`{ "name"?, "room"?, "icon"?, "hidden"? }`. Set a field to `null` to go back to the default. Icons: `bulb`, `ceiling`, `floorLamp`, `tableLamp`, `lightstrip`. Returns `204`.
 
 ## PATCH /v1/accessories/:id/light
 
@@ -80,21 +84,13 @@ Setting `brightness` also turns the light on. `on: false` ignores other fields. 
 
 ## Matter pairing
 
-### GET /v1/homekit/accessories
-
-Matter accessories from the Home app, for the "which light is this" picker. Requires Full Disk Access (`503 permission_required` otherwise).
-
-```json
-[{ "id": "3a:c2:60:56:f1:9b+1", "name": "Desk Lamp", "room": "Office", "model": "H6008", "linkedNodeId": null }]
-```
-
 ### POST /v1/matter/commission
 
 ```json
-{ "code": "3497-011-2332", "homeKitId": "3a:c2:60:56:f1:9b+1" }
+{ "code": "3497-011-2332", "name": "Desk Lamp", "room": "Office" }
 ```
 
-`code` is the 11 or 21 digit setup code from the Home app's "Turn On Pairing Mode", or an `MT:` QR payload. `homeKitId` is optional. Can take up to a minute. Returns:
+`code` is the 11 or 21 digit setup code from another app's pairing mode, or an `MT:` QR payload. `name` and `room` are optional. Can take up to a minute. Returns:
 
 ```json
 { "nodeId": "1", "accessories": [ ] }
@@ -102,13 +98,9 @@ Matter accessories from the Home app, for the "which light is this" picker. Requ
 
 Errors: `409 busy` while another pairing runs, `422 pairing_failed` with the reason.
 
-### PUT /v1/matter/nodes/:nodeId/link
-
-`{ "homeKitId": "..." }` links a node to a Home app accessory, or `{ "homeKitId": null }` unlinks it.
-
 ### DELETE /v1/matter/nodes/:nodeId
 
-Removes RyHome's own pairing from the device. Other controllers, including Apple Home, are untouched.
+Removes RyHome's own pairing from the device and forgets its names. Other controllers are untouched.
 
 ## WS /v1/events
 
@@ -117,7 +109,7 @@ Removes RyHome's own pairing from the device. Other controllers, including Apple
 { "type": "homeChanged" }
 ```
 
-`homeChanged` means rooms, names, scenes, or the set of accessories changed; refetch `GET /v1/home`. Clients may send `{ "type": "ping" }`, which the server ignores.
+`homeChanged` means rooms, names, scenes, or the set of accessories changed; refetch `GET /v1/home`. Clients may send `{ "type": "ping" }`, which the engine ignores.
 
 ## Errors
 
@@ -125,4 +117,4 @@ Removes RyHome's own pairing from the device. Other controllers, including Apple
 { "error": { "code": "not_found", "message": "No such light." } }
 ```
 
-Codes: `unauthorized`, `not_found`, `invalid_request`, `unreachable`, `busy`, `pairing_failed`, `permission_required`, `internal`.
+Codes: `unauthorized`, `not_found`, `invalid_request`, `unreachable`, `busy`, `pairing_failed`, `internal`.

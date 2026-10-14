@@ -1,5 +1,5 @@
 import type { ConnectionStatus, RyHomeBridge } from "./bridge";
-import type { Accessory, BridgeEvent, Capabilities, Home, HomeKitCandidate, LightState } from "./types";
+import type { Accessory, AccessoryDetails, BridgeEvent, Capabilities, Home, LightState } from "./types";
 
 const POLICY_VIOLATION = 1008;
 const WATCHDOG_MS = 15_000;
@@ -40,16 +40,12 @@ export class RemoteBridge implements RyHomeBridge {
     return this.request("POST", `/v1/scenes/${encodeURIComponent(sceneId)}/run`);
   }
 
-  getHomeKitAccessories(): Promise<HomeKitCandidate[]> {
-    return this.request("GET", "/v1/homekit/accessories");
+  updateAccessory(accessoryId: string, details: AccessoryDetails): Promise<void> {
+    return this.request("PATCH", `/v1/accessories/${encodeURIComponent(accessoryId)}`, details);
   }
 
-  commission(code: string, homeKitId: string | null): Promise<{ nodeId: string; accessories: Accessory[] }> {
-    return this.request("POST", "/v1/matter/commission", { code, ...(homeKitId ? { homeKitId } : {}) });
-  }
-
-  linkNode(nodeId: string, homeKitId: string | null): Promise<void> {
-    return this.request("PUT", `/v1/matter/nodes/${nodeId}/link`, { homeKitId });
+  commission(code: string, details: AccessoryDetails): Promise<{ nodeId: string; accessories: Accessory[] }> {
+    return this.request("POST", "/v1/matter/commission", { code, ...details });
   }
 
   removeNode(nodeId: string): Promise<void> {
