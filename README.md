@@ -36,7 +36,7 @@ npm install
 npm run tauri dev
 ```
 
-`tauri dev` and `tauri build` run `npm run prepare-core` first, which bundles `core/` and copies your Node.js runtime in as the engine binary.
+`npm run tauri` runs `npm run prepare-core` first, which bundles `core/` and copies your Node.js runtime in as the engine binary.
 
 For UI work in a browser, run `npm run dev` and choose **Try the Demo**, which uses built-in fake accessories. The desktop app has the same demo under the ••• menu.
 
