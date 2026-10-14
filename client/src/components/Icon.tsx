@@ -70,6 +70,15 @@ const glyphs = {
     </g>
   ),
   close: <path {...stroke} strokeWidth="2.4" d="M7 7l10 10M17 7 7 17" />,
+  check: <path {...stroke} strokeWidth="3" d="m5 12.5 4.5 4.5L19 7.5" />,
+  group: (
+    <g>
+      <rect x="2.5" y="3" width="8.5" height="8.5" rx="2.2" />
+      <rect x="13" y="3" width="8.5" height="8.5" rx="2.2" />
+      <rect x="2.5" y="13.5" width="8.5" height="8.5" rx="2.2" />
+      <rect x="13" y="13.5" width="8.5" height="8.5" rx="2.2" />
+    </g>
+  ),
 } satisfies Record<string, ReactNode>;
 
 export type IconName = keyof typeof glyphs;

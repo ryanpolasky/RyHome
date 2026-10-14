@@ -53,7 +53,7 @@ export function categorySummary(home: Home, id: CategoryId): string | null {
       return lo === hi ? lo : `${lo.slice(0, -1)}-${hi}`;
     }
     case "lights": {
-      const on = items.filter((a) => a.kind === "light" && a.state.on).length;
+      const on = items.filter((a) => a.kind === "light" && !a.members && a.state.on).length;
       return on === 0 ? "All Off" : `${on} On`;
     }
     case "security":

@@ -42,7 +42,8 @@ export function HomeView({
   const title = room?.name ?? category?.name ?? home.name;
 
   const scoped: Home = room ? { ...home, accessories: home.accessories.filter((a) => a.roomId === room.id) } : home;
-  const visible = category ? scoped.accessories.filter((a) => categoryOf(a) === category.id) : scoped.accessories;
+  const tiles = scoped.accessories.filter((a) => !(a.kind === "light" && a.groupId));
+  const visible = category ? tiles.filter((a) => categoryOf(a) === category.id) : tiles;
   const pills = categories.flatMap((c) => {
     const summary = categorySummary(scoped, c.id);
     return summary ? [{ ...c, summary }] : [];

@@ -30,6 +30,8 @@ interface AccessoryBase {
 export interface LightAccessory extends AccessoryBase {
   kind: "light";
   matterNodeId?: string;
+  members?: string[];
+  groupId?: string;
   icon: LightIcon;
   supports: LightSupport;
   state: LightState;
@@ -71,4 +73,5 @@ export interface Capabilities {
   scenes: boolean;
   pairing: boolean;
   rename: boolean;
+  groups: boolean;
 }

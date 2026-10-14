@@ -128,10 +128,13 @@ function HomeApp({ bridge, demo, onToggleDemo }: { bridge: RyHomeBridge; demo: b
         {open && (
           <ControlsSheet
             accessory={open}
+            accessories={store.home.accessories}
             rooms={store.home.rooms}
             bridge={bridge}
+            canGroup={store.capabilities?.groups ?? false}
             onClose={closeSheet}
             onSetLight={(patch) => store.setLight(open.id, patch)}
+            onToggleLight={store.toggleLight}
           />
         )}
         {adding && <AddLightSheet bridge={bridge} rooms={store.home.rooms} onClose={() => setAdding(false)} />}

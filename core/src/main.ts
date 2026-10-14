@@ -1,10 +1,11 @@
 import { randomBytes } from "node:crypto";
 import { AccessoryStore, cleanOverride } from "./accessories.js";
+import { GROUP_PREFIX, GroupStore } from "./groups.js";
 import { buildHome } from "./home.js";
 import { ApiError, startHttp, type Route } from "./http.js";
 import { MatterHub } from "./matter.js";
 import { cleanLightPatch, SceneStore } from "./scenes.js";
-import type { Accessory, Capabilities, Home } from "./types.js";
+import type { Accessory, Capabilities, Home, LightState } from "./types.js";
 
 const CHANGE_DEBOUNCE_MS = 50;
 
@@ -17,8 +18,20 @@ let changeTimer: NodeJS.Timeout | null = null;
 
 const scenes = new SceneStore();
 const store = new AccessoryStore();
+const groups = new GroupStore();
 const matter = new MatterHub(() => scheduleChange());
-const home = () => buildHome(matter, scenes, store);
+const home = () => buildHome(matter, scenes, store, groups);
+const lightIds = () => new Set(matter.lights().map((l) => l.id));
+
+// groups fan out to their members; one unreachable bulb shouldn't stop the rest
+async function setLight(id: string, patch: Partial<LightState>) {
+  const group = groups.get(id);
+  if (!group) return matter.setLight(id, patch);
+  const reachable = new Set(matter.lights().filter((l) => l.reachable).map((l) => l.id));
+  const results = await Promise.allSettled(group.members.filter((m) => reachable.has(m)).map((m) => matter.setLight(m, patch)));
+  const failed = results.filter((r): r is PromiseRejectedResult => r.status === "rejected");
+  if (failed.length > 0 && failed.length === results.length) throw failed[0].reason;
+}
 
 const shape = (h: Home) =>
   JSON.stringify([h.name, h.temperatureUnit, h.rooms, h.scenes, h.accessories.map((a) => [a.id, a.name, a.roomId])]);
@@ -61,7 +74,7 @@ const routes: Route[] = [
   [
     "GET",
     /^\/v1\/capabilities$/,
-    async () => ({ capabilities: { lights: true, scenes: true, pairing: true, rename: true } satisfies Capabilities }),
+    async () => ({ capabilities: { lights: true, scenes: true, pairing: true, rename: true, groups: true } satisfies Capabilities }),
   ],
   ["GET", /^\/v1\/home$/, async () => (last = home())],
   [
@@ -76,8 +89,12 @@ const routes: Route[] = [
     "PATCH",
     /^\/v1\/accessories\/([^/]+)$/,
     async ([id], body) => {
-      if (!matter.lights().some((l) => l.id === id)) throw new ApiError(404, "not_found", "No such accessory.");
-      store.update(id, parse(() => cleanOverride(body)));
+      if (id.startsWith(GROUP_PREFIX)) {
+        if (!parse(() => groups.update(id, body, lightIds()))) throw new ApiError(404, "not_found", "No such group.");
+      } else {
+        if (!lightIds().has(id)) throw new ApiError(404, "not_found", "No such accessory.");
+        store.update(id, parse(() => cleanOverride(body)));
+      }
       scheduleChange();
     },
   ],
@@ -87,7 +104,7 @@ const routes: Route[] = [
     async ([id], body) => {
       const patch = parse(() => cleanLightPatch(body));
       light(id);
-      await matter.setLight(id, patch);
+      await setLight(id, patch);
     },
   ],
   [
@@ -96,7 +113,7 @@ const routes: Route[] = [
     async ([id]) => {
       const scene = scenes.get(id);
       if (!scene) throw new ApiError(404, "not_found", "No such scene.");
-      const results = await Promise.allSettled(scene.actions.map((a) => matter.setLight(a.accessoryId, a.state)));
+      const results = await Promise.allSettled(scene.actions.map((a) => setLight(a.accessoryId, a.state)));
       const failed = results.filter((r) => r.status === "rejected").length;
       if (failed > 0) console.warn(`Scene "${scene.name}": ${failed} of ${results.length} actions failed`);
     },
@@ -125,6 +142,33 @@ const routes: Route[] = [
     /^\/v1\/scenes\/([^/]+)$/,
     async ([id]) => {
       if (!scenes.delete(id)) throw new ApiError(404, "not_found", "No such scene.");
+      scheduleChange();
+    },
+  ],
+  [
+    "POST",
+    /^\/v1\/groups$/,
+    async (_, body) => {
+      const group = parse(() => groups.create(body, lightIds()));
+      scheduleChange();
+      return group;
+    },
+  ],
+  [
+    "PUT",
+    /^\/v1\/groups\/([^/]+)$/,
+    async ([id], body) => {
+      const group = parse(() => groups.update(id, body, lightIds()));
+      if (!group) throw new ApiError(404, "not_found", "No such group.");
+      scheduleChange();
+      return group;
+    },
+  ],
+  [
+    "DELETE",
+    /^\/v1\/groups\/([^/]+)$/,
+    async ([id]) => {
+      if (!groups.delete(id)) throw new ApiError(404, "not_found", "No such group.");
       scheduleChange();
     },
   ],
@@ -160,6 +204,7 @@ const routes: Route[] = [
         throw new ApiError(404, "not_found", (e as Error).message);
       }
       store.forget(`matter-${nodeId}-`);
+      groups.forget(`matter-${nodeId}-`);
     },
   ],
 ];

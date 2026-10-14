@@ -3,10 +3,12 @@ import { useContext, useRef, useState } from "react";
 import type { RyHomeBridge } from "../api/bridge";
 import type { Accessory, LightAccessory, LightIcon, LightState, Room } from "../api/types";
 import { lightColor, statusText, UnitContext } from "../home";
+import { ColorWheel } from "./ColorWheel";
+import { GroupEditor } from "./GroupEditor";
 import { Icon } from "./Icon";
 import { RoomPicker } from "./RoomPicker";
 import { Sheet } from "./Sheet";
-import { AccessoryIcon, iconTint } from "./Tile";
+import { AccessoryIcon, accessoryIcon, iconTint } from "./Tile";
 
 type Preset = { id: string; kind: "temperature" | "color"; patch: Pick<LightState, "colorMode" | "hue" | "saturation" | "colorTemperature"> };
 
@@ -63,21 +65,45 @@ function BrightnessSlider({ light, onChange }: { light: LightAccessory; onChange
   );
 }
 
-function LightControls({ light, onSetLight }: { light: LightAccessory; onSetLight: (patch: Partial<LightState>) => void }) {
+function LightControls({
+  light,
+  members,
+  onSetLight,
+  onToggleMember,
+}: {
+  light: LightAccessory;
+  members: LightAccessory[];
+  onSetLight: (patch: Partial<LightState>) => void;
+  onToggleMember: (id: string) => void;
+}) {
+  const [picking, setPicking] = useState(false);
   const available = presets.filter((p) => (p.kind === "color" ? light.supports.color : light.supports.temperature));
+  const canPick = light.supports.color || light.supports.temperature;
+  const custom = !available.some((p) => matches(light.state, p.patch));
   return (
     <>
-      {light.supports.brightness ? (
-        <BrightnessSlider light={light} onChange={onSetLight} />
-      ) : (
-        <button
-          className={`power-button ${light.state.on ? "on" : ""}`}
-          disabled={!light.reachable}
-          onClick={() => onSetLight({ on: !light.state.on })}
-        >
-          <Icon name="bulb" size={40} />
-        </button>
-      )}
+      <div className="controls-row">
+        {light.supports.brightness ? (
+          <BrightnessSlider light={light} onChange={onSetLight} />
+        ) : (
+          <button
+            className={`power-button ${light.state.on ? "on" : ""}`}
+            disabled={!light.reachable}
+            onClick={() => onSetLight({ on: !light.state.on })}
+          >
+            <Icon name="bulb" size={40} />
+          </button>
+        )}
+        {picking && (
+          <ColorWheel
+            state={light.state}
+            color={light.supports.color}
+            temperature={light.supports.temperature}
+            disabled={!light.reachable}
+            onChange={onSetLight}
+          />
+        )}
+      </div>
       {available.length > 0 && (
         <div className="presets">
           {available.map((p) => (
@@ -89,6 +115,24 @@ function LightControls({ light, onSetLight }: { light: LightAccessory; onSetLigh
               style={{ background: lightColor(p.patch) }}
               onClick={() => onSetLight({ ...p.patch, on: true })}
             />
+          ))}
+          {canPick && (
+            <button
+              aria-label="Custom color"
+              className={`preset custom ${picking || custom ? "selected" : ""}`}
+              disabled={!light.reachable}
+              onClick={() => setPicking(!picking)}
+            />
+          )}
+        </div>
+      )}
+      {members.length > 0 && (
+        <div className="member-strip">
+          {members.map((m) => (
+            <button key={m.id} className={`member-chip ${m.state.on ? "on" : ""}`} disabled={!m.reachable} onClick={() => onToggleMember(m.id)}>
+              <Icon name={accessoryIcon(m)} size={14} />
+              <span>{m.name}</span>
+            </button>
           ))}
         </div>
       )}
@@ -102,13 +146,18 @@ function LightSettings({
   light,
   rooms,
   bridge,
+  canGroup,
+  onGroup,
   onRemoved,
 }: {
   light: LightAccessory;
   rooms: Room[];
   bridge: RyHomeBridge;
+  canGroup: boolean;
+  onGroup: () => void;
   onRemoved: () => void;
 }) {
+  const isGroup = !!light.members;
   const [name, setName] = useState(light.name);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -161,10 +210,19 @@ function LightSettings({
           ))}
         </div>
       </div>
-      {light.matterNodeId &&
+      {canGroup && (
+        <button className="glass-button" disabled={busy} onClick={onGroup}>
+          {isGroup ? "Edit Lights in Group..." : "Group with Other Lights..."}
+        </button>
+      )}
+      {(isGroup || light.matterNodeId) &&
         (confirming ? (
           <div className="settings-confirm">
-            <p>RyHome will stop controlling this light. It keeps working in any other app it's paired with.</p>
+            <p>
+              {isGroup
+                ? "The lights stay in RyHome and go back to showing on their own."
+                : "RyHome will stop controlling this light. It keeps working in any other app it's paired with."}
+            </p>
             <div className="settings-actions">
               <button className="glass-button" disabled={busy} onClick={() => setConfirming(false)}>
                 Cancel
@@ -174,18 +232,18 @@ function LightSettings({
                 disabled={busy}
                 onClick={() =>
                   run(async () => {
-                    await bridge.removeNode(light.matterNodeId!);
+                    await (isGroup ? bridge.deleteGroup(light.id) : bridge.removeNode(light.matterNodeId!));
                     onRemoved();
                   })
                 }
               >
-                {busy ? "Removing..." : "Remove"}
+                {busy ? "Working..." : isGroup ? "Ungroup" : "Remove"}
               </button>
             </div>
           </div>
         ) : (
           <button className="glass-button destructive" onClick={() => setConfirming(true)}>
-            Remove from RyHome
+            {isGroup ? "Ungroup" : "Remove from RyHome"}
           </button>
         ))}
       <p className={`settings-error ${error ? "visible" : ""}`}>{error ?? " "}</p>
@@ -222,20 +280,28 @@ function Readout({ accessory }: { accessory: Exclude<Accessory, LightAccessory> 
 
 export function ControlsSheet({
   accessory,
+  accessories,
   rooms,
   bridge,
+  canGroup,
   onClose,
   onSetLight,
+  onToggleLight,
 }: {
   accessory: Accessory;
+  accessories: Accessory[];
   rooms: Room[];
   bridge: RyHomeBridge;
+  canGroup: boolean;
   onClose: () => void;
   onSetLight: (patch: Partial<LightState>) => void;
+  onToggleLight: (id: string) => void;
 }) {
   const unit = useContext(UnitContext);
-  const [settings, setSettings] = useState(false);
-  const configurable = accessory.kind === "light";
+  const [mode, setMode] = useState<"controls" | "settings" | "group">("controls");
+  const lights = accessories.filter((a): a is LightAccessory => a.kind === "light");
+  const members = accessory.kind === "light" && accessory.members ? lights.filter((l) => accessory.members!.includes(l.id)) : [];
+  const settingsLabel = accessory.kind === "light" && accessory.members ? "Group Settings" : "Light Settings";
 
   return (
     <Sheet
@@ -245,19 +311,36 @@ export function ControlsSheet({
       status={statusText(accessory, unit)}
       onClose={onClose}
       footer={
-        configurable && (
-          <button className="glass-button" onClick={() => setSettings(!settings)}>
-            {settings ? "Done" : "Light Settings"}
+        accessory.kind === "light" &&
+        mode !== "group" && (
+          <button className="glass-button" onClick={() => setMode(mode === "controls" ? "settings" : "controls")}>
+            {mode === "controls" ? settingsLabel : "Done"}
           </button>
         )
       }
     >
       {accessory.kind !== "light" ? (
         <Readout accessory={accessory} />
-      ) : settings ? (
-        <LightSettings light={accessory} rooms={rooms} bridge={bridge} onRemoved={onClose} />
+      ) : mode === "group" ? (
+        <GroupEditor
+          bridge={bridge}
+          lights={lights}
+          rooms={rooms}
+          group={accessory.members ? accessory : undefined}
+          seed={accessory.members ? undefined : accessory}
+          onDone={() => (accessory.members ? setMode("settings") : onClose())}
+        />
+      ) : mode === "settings" ? (
+        <LightSettings
+          light={accessory}
+          rooms={rooms}
+          bridge={bridge}
+          canGroup={canGroup}
+          onGroup={() => setMode("group")}
+          onRemoved={onClose}
+        />
       ) : (
-        <LightControls light={accessory} onSetLight={onSetLight} />
+        <LightControls light={accessory} members={members} onSetLight={onSetLight} onToggleMember={onToggleLight} />
       )}
     </Sheet>
   );

@@ -1,5 +1,5 @@
 import type { ConnectionStatus, RyHomeBridge } from "./bridge";
-import type { Accessory, BridgeEvent, Home, LightAccessory, LightIcon, LightState } from "./types";
+import type { Accessory, BridgeEvent, GroupInput, Home, LightAccessory, LightIcon, LightState } from "./types";
 
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -120,17 +120,70 @@ function seed(): Home {
   };
 }
 
+interface MockGroup {
+  id: string;
+  name: string;
+  roomId: string;
+  icon: LightIcon;
+  members: string[];
+}
+
 export function createMockBridge(): RyHomeBridge {
   const home = seed();
   const listeners = new Set<(event: BridgeEvent) => void>();
   const broadcast = (event: BridgeEvent) => listeners.forEach((l) => l(event));
   const emit = (accessory: Accessory) => broadcast({ type: "accessoryUpdated", accessory });
   const timers: number[] = [];
+  let groups: MockGroup[] = [
+    { id: "group-tall", name: "Tall Lamp", roomId: "living-room", icon: "floorLamp", members: ["tall-top", "tall-middle", "tall-bottom"] },
+  ];
+  let nextNode = 100;
+  let nextGroup = 1;
+
   const roomFor = (name: string | undefined, fallback: string) => {
     if (!name) return fallback;
     const id = name.toLowerCase().replace(/[^a-z0-9]+/g, "-");
     if (!home.rooms.some((r) => r.id === id)) home.rooms.push({ id, name });
     return id;
+  };
+  const lights = () => home.accessories.filter((a): a is LightAccessory => a.kind === "light" && !a.members);
+
+  const sync = () => {
+    groups = groups.filter((g) => g.members.length > 1);
+    const plain = home.accessories.filter((a) => !(a.kind === "light" && a.members));
+    for (const a of plain) if (a.kind === "light") a.groupId = groups.find((g) => g.members.includes(a.id))?.id;
+    const built = groups.map((g): LightAccessory => {
+      const members = plain.filter((a): a is LightAccessory => a.kind === "light" && g.members.includes(a.id));
+      const lit = members.filter((m) => m.state.on);
+      const pool = lit.length ? lit : members;
+      return {
+        ...light(g.id, g.name, g.roomId, g.icon),
+        matterNodeId: undefined,
+        members: members.map((m) => m.id),
+        state: {
+          ...(lit[0] ?? members[0]).state,
+          on: lit.length > 0,
+          brightness: Math.round(pool.reduce((s, m) => s + m.state.brightness, 0) / pool.length),
+        },
+      };
+    });
+    home.accessories = [...plain, ...built];
+  };
+  sync();
+
+  const saveGroup = (id: string, input: Partial<GroupInput>) => {
+    const existing = groups.find((g) => g.id === id);
+    const group: MockGroup = {
+      id,
+      name: input.name ?? existing?.name ?? "Group",
+      roomId: input.room ? roomFor(input.room, "living-room") : existing?.roomId ?? "living-room",
+      icon: input.icon ?? existing?.icon ?? "bulb",
+      members: input.members ?? existing?.members ?? [],
+    };
+    for (const g of groups) if (g.id !== id) g.members = g.members.filter((m) => !group.members.includes(m));
+    groups = [...groups.filter((g) => g.id !== id), group];
+    sync();
+    broadcast({ type: "homeChanged" });
   };
 
   timers.push(
@@ -142,11 +195,9 @@ export function createMockBridge(): RyHomeBridge {
     }, 15000)
   );
 
-  let nextNode = 100;
-
   return {
     async getCapabilities() {
-      return { lights: true, scenes: true, pairing: true, rename: true };
+      return { lights: true, scenes: true, pairing: true, rename: true, groups: true };
     },
     async getHome() {
       await wait(150);
@@ -154,17 +205,20 @@ export function createMockBridge(): RyHomeBridge {
     },
     async commission(code, details) {
       await wait(1800);
-      if (code.replace(/D/g, "").length !== 11) throw new Error("That isn't a valid Matter pairing code. Use the 11-digit setup code from the Home app.");
+      if (code.replace(/\D/g, "").length !== 11) throw new Error("That isn't a valid Matter pairing code. Use the 11-digit setup code from the Home app.");
       const nodeId = String(nextNode++);
       const accessory: LightAccessory = {
         ...light(`matter-${nodeId}-1`, details.name ?? "Govee Bulb", roomFor(details.room, "office"), details.icon ?? "bulb", { on: true }),
         matterNodeId: nodeId,
       };
       home.accessories.push(accessory);
+      sync();
       broadcast({ type: "homeChanged" });
       return { nodeId, accessories: [structuredClone(accessory)] };
     },
     async updateAccessory(accessoryId, details) {
+      const group = groups.find((g) => g.id === accessoryId);
+      if (group) return saveGroup(group.id, details);
       home.accessories = home.accessories.map((a) =>
         a.id !== accessoryId
           ? a
@@ -177,28 +231,43 @@ export function createMockBridge(): RyHomeBridge {
       );
       broadcast({ type: "homeChanged" });
     },
+    async createGroup(input) {
+      saveGroup(`group-demo-${nextGroup++}`, input);
+    },
+    async updateGroup(groupId, input) {
+      saveGroup(groupId, input);
+    },
+    async deleteGroup(groupId) {
+      groups = groups.filter((g) => g.id !== groupId);
+      sync();
+      broadcast({ type: "homeChanged" });
+    },
     async removeNode(nodeId) {
       home.accessories = home.accessories.filter((a) => !(a.kind === "light" && a.matterNodeId === nodeId));
+      for (const g of groups) g.members = g.members.filter((m) => home.accessories.some((a) => a.id === m));
+      sync();
       broadcast({ type: "homeChanged" });
     },
     async setLight(accessoryId, patch) {
-      const index = home.accessories.findIndex((a) => a.id === accessoryId);
-      const accessory = home.accessories[index];
-      if (accessory?.kind !== "light") throw new Error("Not a light");
-      const next = { ...accessory, state: { ...accessory.state, ...patch } };
-      home.accessories[index] = next;
-      emit(structuredClone(next));
+      const group = groups.find((g) => g.id === accessoryId);
+      const targets = group ? group.members : [accessoryId];
+      for (const target of targets) {
+        const accessory = lights().find((a) => a.id === target);
+        if (!accessory) throw new Error("Not a light");
+        accessory.state = { ...accessory.state, ...patch };
+      }
+      sync();
+      for (const a of home.accessories) {
+        if (a.kind === "light" && (targets.includes(a.id) || a.members?.some((m) => targets.includes(m)))) emit(structuredClone(a));
+      }
     },
     async runScene(sceneId) {
       const scene = home.scenes.find((s) => s.id === sceneId);
       if (!scene) throw new Error("Unknown scene");
       const on = scene.type === "arrival" || scene.type === "wakeUp";
-      home.accessories = home.accessories.map((a) => {
-        if (a.kind !== "light") return a;
-        const next = { ...a, state: { ...a.state, on } };
-        emit(structuredClone(next));
-        return next;
-      });
+      for (const a of lights()) a.state = { ...a.state, on };
+      sync();
+      home.accessories.forEach((a) => a.kind === "light" && emit(structuredClone(a)));
     },
     subscribe(listener) {
       listeners.add(listener);

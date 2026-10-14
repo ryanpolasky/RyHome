@@ -76,6 +76,7 @@ export class MatterHub {
       environment: { environment, id: "ryhome" },
       autoConnect: false,
       adminFabricLabel: "RyHome",
+      basicInformation: { vendorName: "RyHome", productName: "RyHome Controller", productLabel: "Controller", nodeLabel: "RyHome" },
     });
     await this.#controller.start();
     for (const nodeId of this.#controller.getCommissionedNodes()) {

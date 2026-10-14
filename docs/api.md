@@ -23,7 +23,7 @@ The engine closes the socket with code `1008` if the first message isn't a valid
 ## GET /v1/capabilities
 
 ```json
-{ "capabilities": { "lights": true, "scenes": true, "pairing": true, "rename": true } }
+{ "capabilities": { "lights": true, "scenes": true, "pairing": true, "rename": true, "groups": true } }
 ```
 
 ## GET /v1/home
@@ -72,6 +72,18 @@ Any subset of the light state. Returns `204`.
 ```
 
 Setting `brightness` also turns the light on. `on: false` ignores other fields. Unreachable lights return `503 unreachable`.
+
+## Groups
+
+A group shows up in `accessories` as a light with a `members` list of light ids. Its state is combined: on when any member is on, at the average brightness of the members that are on. Members stay in `accessories` with a `groupId` so clients can hide them from the main grid.
+
+- `POST /v1/groups` with `{ "name", "room"?, "icon"?, "members": ["matter-1-1", "matter-2-1"] }` returns the group.
+- `PUT /v1/groups/:id` with any of the same fields. Members you leave out are released.
+- `DELETE /v1/groups/:id` ungroups. The lights themselves aren't touched.
+- `PATCH /v1/accessories/:groupId` renames or moves a group, like any light.
+- `PATCH /v1/accessories/:groupId/light` sends the change to every reachable member.
+
+A light belongs to at most one group; adding it to another moves it. A group needs at least two lights.
 
 ## Scenes
 

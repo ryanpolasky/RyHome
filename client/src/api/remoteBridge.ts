@@ -1,5 +1,5 @@
 import type { ConnectionStatus, RyHomeBridge } from "./bridge";
-import type { Accessory, AccessoryDetails, BridgeEvent, Capabilities, Home, LightState } from "./types";
+import type { Accessory, AccessoryDetails, BridgeEvent, Capabilities, GroupInput, Home, LightState } from "./types";
 
 const POLICY_VIOLATION = 1008;
 const WATCHDOG_MS = 15_000;
@@ -38,6 +38,18 @@ export class RemoteBridge implements RyHomeBridge {
 
   runScene(sceneId: string): Promise<void> {
     return this.request("POST", `/v1/scenes/${encodeURIComponent(sceneId)}/run`);
+  }
+
+  async createGroup(group: GroupInput): Promise<void> {
+    await this.request("POST", "/v1/groups", group);
+  }
+
+  async updateGroup(groupId: string, group: Partial<GroupInput>): Promise<void> {
+    await this.request("PUT", `/v1/groups/${encodeURIComponent(groupId)}`, group);
+  }
+
+  deleteGroup(groupId: string): Promise<void> {
+    return this.request("DELETE", `/v1/groups/${encodeURIComponent(groupId)}`);
   }
 
   updateAccessory(accessoryId: string, details: AccessoryDetails): Promise<void> {
