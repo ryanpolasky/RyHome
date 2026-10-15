@@ -36,34 +36,31 @@ export function buildHome(matter: MatterHub, scenes: SceneStore, store: Accessor
     if (!rooms.has(id)) rooms.set(id, { id, name });
     return id;
   };
+  const accessories: Accessory[] = [];
   const lights: LightAccessory[] = [];
 
-  for (const light of matter.lights()) {
-    const override = store.get(light.id);
+  for (const device of matter.devices()) {
+    const override = store.get(device.id);
     if (override.hidden) continue;
-    lights.push({
-      id: light.id,
-      kind: "light",
-      matterNodeId: light.nodeId,
-      groupId: groups.groupOf(light.id)?.id,
-      name: override.name ?? light.fallbackName,
-      roomId: roomId(override.room ?? DEFAULT_ROOM),
-      icon: override.icon ?? "bulb",
-      reachable: light.reachable,
-      supports: light.supports,
-      state: light.state,
-    });
+    const { nodeId, fallbackName, ...rest } = device;
+    const shared = { matterNodeId: nodeId, name: override.name ?? fallbackName, roomId: roomId(override.room ?? DEFAULT_ROOM) };
+    if (rest.kind === "light") {
+      const light: LightAccessory = { ...rest, ...shared, groupId: groups.groupOf(device.id)?.id, icon: override.icon ?? "bulb" };
+      lights.push(light);
+      accessories.push(light);
+    } else {
+      accessories.push({ ...rest, ...shared } as Accessory);
+    }
   }
 
   const byId = new Map(lights.map((l) => [l.id, l]));
-  const groupAccessories: LightAccessory[] = [];
   for (const group of groups.groups) {
     const members = group.members.flatMap((id) => byId.get(id) ?? []);
     if (members.length < 2) {
       members.forEach((m) => delete m.groupId);
       continue;
     }
-    groupAccessories.push({
+    accessories.push({
       id: group.id,
       kind: "light",
       members: members.map((m) => m.id),
@@ -80,7 +77,6 @@ export function buildHome(matter: MatterHub, scenes: SceneStore, store: Accessor
     });
   }
 
-  const accessories: Accessory[] = [...lights, ...groupAccessories];
   const usedRooms = new Set(accessories.filter((a) => !(a.kind === "light" && a.groupId)).map((a) => a.roomId));
 
   return {

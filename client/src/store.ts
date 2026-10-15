@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ConnectionStatus, RyHomeBridge } from "./api/bridge";
-import type { Accessory, Capabilities, Home, LightState, PresetInput } from "./api/types";
+import type { Accessory, Capabilities, DeviceStatePatch, Home, LightState, PresetInput } from "./api/types";
 
 const LIGHT_THROTTLE_MS = 80;
 const HOLD_MS = 4000;
@@ -119,13 +119,37 @@ export function useHomeStore(bridge: RyHomeBridge) {
     [flush]
   );
 
+  // applies a device change right away so the tile responds before the device confirms
+  const setDevice = useCallback(
+    (id: string, patch: DeviceStatePatch) => {
+      setHome((h) => {
+        if (!h) return h;
+        const a = h.accessories.find((x) => x.id === id);
+        if (!a) return h;
+        let next: Accessory = a;
+        if ((a.kind === "outlet" || a.kind === "fan") && patch.on !== undefined) next = { ...a, on: patch.on };
+        if (a.kind === "outlet" && patch.brightness !== undefined) next = { ...a, on: true, brightness: patch.brightness };
+        if (a.kind === "fan" && patch.speed !== undefined) next = { ...a, on: patch.speed > 0, speed: patch.speed };
+        if (a.kind === "lock" && patch.locked !== undefined) next = { ...a, locked: patch.locked };
+        if (a.kind === "blind" && patch.position !== undefined) next = { ...a, position: patch.position };
+        if (a.kind === "thermostat" && patch.targetDelta !== undefined && a.target !== null) next = { ...a, target: a.target + patch.targetDelta };
+        return replaceAccessory(h, next);
+      });
+      bridge.setState(id, patch).catch((e) => fail(id, e));
+    },
+    [bridge, fail]
+  );
+
   const toggleLight = useCallback(
     (id: string) => {
-      const accessory = home?.accessories.find((a) => a.id === id);
-      if (accessory?.kind !== "light" || !accessory.reachable) return;
-      setLight(id, { on: !accessory.state.on });
+      const a = home?.accessories.find((x) => x.id === id);
+      if (!a || !a.reachable) return;
+      if (a.kind === "light") setLight(id, { on: !a.state.on });
+      if (a.kind === "outlet" || a.kind === "fan") setDevice(id, { on: !a.on });
+      if (a.kind === "lock") setDevice(id, { locked: a.locked === false });
+      if (a.kind === "blind") setDevice(id, { position: (a.position ?? 0) > 0 ? 0 : 100 });
     },
-    [home, setLight]
+    [home, setLight, setDevice]
   );
 
   // null resets a slot to its default; the engine fills defaults back in on reload
@@ -161,6 +185,7 @@ export function useHomeStore(bridge: RyHomeBridge) {
     status,
     retry: load,
     setLight,
+    setDevice,
     toggleLight,
     runScene,
     setColorPreset,

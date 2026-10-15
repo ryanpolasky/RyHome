@@ -122,6 +122,14 @@ function seed(): Home {
         saturation: 60,
         colorMode: "hs",
       }),
+      { id: "desk-plug", name: "Desk Plug", roomId: "office", kind: "outlet", style: "plug", on: true, brightness: null, reachable: true, matterNodeId: "desk-plug" },
+      { id: "office-fan", name: "Ceiling Fan", roomId: "office", kind: "fan", on: false, speed: 40, reachable: true, matterNodeId: "office-fan" },
+      { id: "front-lock", name: "Front Door Lock", roomId: "front-door", kind: "lock", locked: true, jammed: false, reachable: true, battery: 64, matterNodeId: "front-lock" },
+      { id: "front-contact", name: "Front Door", roomId: "front-door", kind: "sensor", sensor: "contact", value: 1, reachable: true, battery: 90, matterNodeId: "front-contact" },
+      { id: "hall-motion", name: "Hallway Motion", roomId: "living-room", kind: "sensor", sensor: "motion", value: 0, reachable: true, battery: 55, matterNodeId: "hall-motion" },
+      { id: "living-shades", name: "Shades", roomId: "living-room", kind: "blind", position: 60, reachable: true, matterNodeId: "living-shades" },
+      { id: "thermostat", name: "Thermostat", roomId: "living-room", kind: "thermostat", current: 21.5, target: 22, mode: "heat", reachable: true, matterNodeId: "thermostat" },
+      { id: "vacuum", name: "Robot Vacuum", roomId: "living-room", kind: "other", deviceType: "Robot Vacuum", reachable: true, matterNodeId: "vacuum" },
     ],
     scenes: [
       { id: "scene-arrive", name: "Arrive Home", type: "arrival", actions: [] },
@@ -209,7 +217,7 @@ export function createMockBridge(): RyHomeBridge {
 
   return {
     async getCapabilities() {
-      return { lights: true, scenes: true, pairing: true, rename: true, groups: true };
+      return { lights: true, scenes: true, pairing: true, rename: true, groups: true, backup: false };
     },
     async getHome() {
       await wait(150);
@@ -263,6 +271,15 @@ export function createMockBridge(): RyHomeBridge {
       sync();
       broadcast({ type: "homeChanged" });
     },
+    async exportBackup() {
+      throw new Error("Backups aren't available in the demo.");
+    },
+    async restoreBackup() {
+      throw new Error("Backups aren't available in the demo.");
+    },
+    async forgetNode(nodeId) {
+      return this.removeNode(nodeId);
+    },
     async removeNode(nodeId) {
       home.accessories = home.accessories.filter((a) => !(a.kind === "light" && a.matterNodeId === nodeId));
       for (const g of groups) g.members = g.members.filter((m) => home.accessories.some((a) => a.id === m));
@@ -282,13 +299,48 @@ export function createMockBridge(): RyHomeBridge {
         if (a.kind === "light" && (targets.includes(a.id) || a.members?.some((m) => targets.includes(m)))) emit(structuredClone(a));
       }
     },
+    async setState(accessoryId, patch) {
+      await wait(150);
+      home.accessories = home.accessories.map((a) => {
+        if (a.id !== accessoryId) return a;
+        if ((a.kind === "outlet" || a.kind === "fan") && patch.on !== undefined) return { ...a, on: patch.on };
+        if (a.kind === "fan" && patch.speed !== undefined) return { ...a, on: patch.speed > 0, speed: patch.speed };
+        if (a.kind === "lock" && patch.locked !== undefined) return { ...a, locked: patch.locked };
+        if (a.kind === "blind" && patch.position !== undefined) return { ...a, position: patch.position };
+        if (a.kind === "thermostat" && patch.targetDelta !== undefined && a.target !== null) return { ...a, target: a.target + patch.targetDelta };
+        return a;
+      });
+      const updated = home.accessories.find((a) => a.id === accessoryId);
+      if (updated) emit(structuredClone(updated));
+    },
     async runScene(sceneId) {
       const scene = home.scenes.find((s) => s.id === sceneId);
       if (!scene) throw new Error("Unknown scene");
-      const on = scene.type === "arrival" || scene.type === "wakeUp";
-      for (const a of lights()) a.state = { ...a.state, on };
+      if (scene.actions.length === 0) {
+        const on = scene.type === "arrival" || scene.type === "wakeUp";
+        for (const a of lights()) a.state = { ...a.state, on };
+      }
+      for (const action of scene.actions) {
+        const group = groups.find((g) => g.id === action.accessoryId);
+        for (const id of group ? group.members : [action.accessoryId]) {
+          const target = lights().find((a) => a.id === id);
+          if (target) target.state = { ...target.state, ...action.state };
+        }
+      }
       sync();
       home.accessories.forEach((a) => a.kind === "light" && emit(structuredClone(a)));
+    },
+    async createScene(scene) {
+      home.scenes.push({ ...scene, id: `scene-demo-${Date.now()}` });
+      broadcast({ type: "homeChanged" });
+    },
+    async updateScene(sceneId, scene) {
+      home.scenes = home.scenes.map((s) => (s.id === sceneId ? { ...scene, id: sceneId } : s));
+      broadcast({ type: "homeChanged" });
+    },
+    async deleteScene(sceneId) {
+      home.scenes = home.scenes.filter((s) => s.id !== sceneId);
+      broadcast({ type: "homeChanged" });
     },
     subscribe(listener) {
       listeners.add(listener);

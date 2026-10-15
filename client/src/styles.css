@@ -1273,7 +1273,7 @@ button:focus-visible {
   text-align: right;
 }
 
-.swatch-menu {
+.context-menu {
   position: fixed;
   top: auto;
   right: auto;
@@ -1412,4 +1412,113 @@ button:focus-visible {
 
 .switch.on .switch-knob {
   transform: translateX(16px);
+}
+
+.tile-icon.scene-custom {
+  background: var(--accent);
+}
+
+.tile.add-tile {
+  background: rgba(62, 62, 62, 0.28);
+  box-shadow: inset 0 0 0 1.5px rgba(255, 255, 255, 0.22);
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.tile.add-tile:hover {
+  background: rgba(62, 62, 62, 0.4);
+}
+
+.scene-editor {
+  width: 460px;
+}
+
+.scene-lights {
+  max-height: 340px;
+}
+
+.scene-light {
+  border-radius: 8px;
+}
+
+.scene-light.checked {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.scene-light .member-choice {
+  width: 100%;
+}
+
+.scene-light-controls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 10px 9px 38px;
+  font-size: 12px;
+}
+
+.segmented.small button {
+  min-width: 38px;
+  padding: 2px 8px;
+  font-size: 11.5px;
+}
+
+.scene-swatch {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--swatch);
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.15);
+}
+
+.scene-light-controls .link-button {
+  margin-left: auto;
+  font-size: 11.5px;
+}
+
+.pill-power svg {
+  color: #30d158;
+}
+
+.lock-button.on {
+  color: #ff9f0a;
+}
+
+.low-battery {
+  color: #ff8a80;
+}
+
+.glass-button.round {
+  display: grid;
+  place-items: center;
+  min-width: 0;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border-radius: 50%;
+}
+
+.thermostat-target {
+  display: flex;
+  align-items: center;
+  gap: 22px;
+  margin-top: 18px;
+  padding: 12px 18px;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.14);
+}
+
+.thermostat-value {
+  font-size: 28px;
+  font-weight: 600;
+  color: #fff;
+}
+
+.thermostat-mode {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.scene-light.checked .member-check {
+  background: var(--accent);
+  box-shadow: none;
 }

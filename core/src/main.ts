@@ -1,11 +1,12 @@
 import { randomBytes } from "node:crypto";
 import { AccessoryStore, cleanOverride } from "./accessories.js";
+import { restoreBackup, validateBackup, writeBackup } from "./backup.js";
 import { GROUP_PREFIX, GroupStore } from "./groups.js";
 import { buildHome } from "./home.js";
 import { ApiError, startHttp, type Route } from "./http.js";
-import { MatterHub } from "./matter.js";
+import { MatterHub, UnreachableError } from "./matter.js";
 import { cleanLightPatch, SceneStore } from "./scenes.js";
-import type { Accessory, Capabilities, Home, LightState } from "./types.js";
+import type { Accessory, Capabilities, DeviceStatePatch, Home, LightState } from "./types.js";
 
 const CHANGE_DEBOUNCE_MS = 50;
 
@@ -22,6 +23,7 @@ const groups = new GroupStore();
 const matter = new MatterHub(() => scheduleChange());
 const home = () => buildHome(matter, scenes, store, groups);
 const lightIds = () => new Set(matter.lights().map((l) => l.id));
+const deviceIds = () => new Set(matter.devices().map((d) => d.id));
 
 // groups fan out to their members; one unreachable bulb shouldn't stop the rest
 async function setLight(id: string, patch: Partial<LightState>) {
@@ -62,6 +64,35 @@ function light(id: string): Accessory {
   return accessory;
 }
 
+function cleanDevicePatch(input: unknown): DeviceStatePatch {
+  const raw = (input ?? {}) as Record<string, unknown>;
+  const patch: DeviceStatePatch = {};
+  for (const key of ["on", "locked", "stop"] as const) {
+    if (raw[key] === undefined) continue;
+    if (typeof raw[key] !== "boolean") throw new Error(`${key} must be a boolean`);
+    patch[key] = raw[key] as boolean;
+  }
+  for (const [key, min, max] of [["brightness", 0, 100], ["position", 0, 100], ["speed", 0, 100], ["targetDelta", -10, 10]] as const) {
+    const value = raw[key];
+    if (value === undefined) continue;
+    if (typeof value !== "number" || !Number.isFinite(value)) throw new Error(`${key} must be a number`);
+    patch[key] = Math.min(max, Math.max(min, value));
+  }
+  return patch;
+}
+
+async function removeNode(nodeId: string, force: boolean) {
+  if (!matter.has(nodeId)) throw new ApiError(404, "not_found", "No such node.");
+  try {
+    await matter.remove(nodeId, force);
+  } catch (e) {
+    if (e instanceof UnreachableError) throw new ApiError(503, "unreachable", e.message);
+    throw e;
+  }
+  store.forget(`matter-${nodeId}-`);
+  groups.forget(`matter-${nodeId}-`);
+}
+
 function parse<T>(fn: () => T): T {
   try {
     return fn();
@@ -74,7 +105,7 @@ const routes: Route[] = [
   [
     "GET",
     /^\/v1\/capabilities$/,
-    async () => ({ capabilities: { lights: true, scenes: true, pairing: true, rename: true, groups: true } satisfies Capabilities }),
+    async () => ({ capabilities: { lights: true, scenes: true, pairing: true, rename: true, groups: true, backup: true } satisfies Capabilities }),
   ],
   ["GET", /^\/v1\/home$/, async () => (last = home())],
   [
@@ -92,10 +123,25 @@ const routes: Route[] = [
       if (id.startsWith(GROUP_PREFIX)) {
         if (!parse(() => groups.update(id, body, lightIds()))) throw new ApiError(404, "not_found", "No such group.");
       } else {
-        if (!lightIds().has(id)) throw new ApiError(404, "not_found", "No such accessory.");
+        if (!deviceIds().has(id)) throw new ApiError(404, "not_found", "No such accessory.");
         store.update(id, parse(() => cleanOverride(body)));
       }
       scheduleChange();
+    },
+  ],
+  [
+    "PATCH",
+    /^\/v1\/accessories\/([^/]+)\/state$/,
+    async ([id], body) => {
+      const device = matter.devices().find((d) => d.id === id);
+      if (!device) throw new ApiError(404, "not_found", "No such accessory.");
+      if (!device.reachable) throw new ApiError(503, "unreachable", `${device.fallbackName} isn't responding.`);
+      const patch = parse(() => cleanDevicePatch(body));
+      try {
+        await matter.setDevice(id, patch);
+      } catch (e) {
+        throw new ApiError(422, "command_failed", (e as Error).message);
+      }
     },
   ],
   [
@@ -105,6 +151,16 @@ const routes: Route[] = [
       const patch = parse(() => cleanLightPatch(body));
       light(id);
       await setLight(id, patch);
+    },
+  ],
+  [
+    "POST",
+    /^\/v1\/lights\/off$/,
+    async () => {
+      const lit = matter.lights().filter((l) => l.reachable && l.state.on);
+      const results = await Promise.allSettled(lit.map((l) => matter.setLight(l.id, { on: false })));
+      const failed = results.filter((r) => r.status === "rejected").length;
+      if (failed > 0) console.warn(`All off: ${failed} of ${results.length} lights didn't respond`);
     },
   ],
   [
@@ -195,17 +251,38 @@ const routes: Route[] = [
     },
   ],
   [
+    "POST",
+    /^\/v1\/backup\/export$/,
+    async (_, body) => {
+      const path = (body as { path?: unknown } | undefined)?.path;
+      if (typeof path !== "string" || !path) throw new ApiError(400, "invalid_request", "Send {\"path\": \"...\"} to save the backup to.");
+      writeBackup(path);
+    },
+  ],
+  [
+    "POST",
+    /^\/v1\/backup\/restore$/,
+    async (_, body) => {
+      const path = (body as { path?: unknown } | undefined)?.path;
+      if (typeof path !== "string" || !path) throw new ApiError(400, "invalid_request", "Send {\"path\": \"...\"} of the backup to restore.");
+      parse(() => validateBackup(path));
+      await matter.stop();
+      const safety = restoreBackup(path);
+      console.log(`Restored backup from ${path}; previous data saved to ${safety}. Restarting.`);
+      // the desktop app restarts the engine, which then loads the restored pairings
+      setTimeout(() => process.exit(0), 200);
+      return { restarting: true, previousDataSavedTo: safety };
+    },
+  ],
+  [
     "DELETE",
     /^\/v1\/matter\/nodes\/(\d+)$/,
-    async ([nodeId]) => {
-      try {
-        await matter.remove(nodeId);
-      } catch (e) {
-        throw new ApiError(404, "not_found", (e as Error).message);
-      }
-      store.forget(`matter-${nodeId}-`);
-      groups.forget(`matter-${nodeId}-`);
-    },
+    async ([nodeId]) => removeNode(nodeId, false),
+  ],
+  [
+    "POST",
+    /^\/v1\/matter\/nodes\/(\d+)\/forget$/,
+    async ([nodeId]) => removeNode(nodeId, true),
   ],
 ];
 

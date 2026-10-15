@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
 import type { RyHomeBridge } from "../api/bridge";
 import type { Home } from "../api/types";
-import { appVersion, getLaunchAtLogin, isDesktop, quitApp, setLaunchAtLogin } from "../desktop";
+import { appVersion, getLaunchAtLogin, isDesktop, pickBackupOpen, pickBackupSave, quitApp, setLaunchAtLogin } from "../desktop";
 import type { Settings } from "../settings";
 import { Icon } from "./Icon";
 import { Sheet } from "./Sheet";
@@ -37,12 +37,14 @@ function Row({ label, detail, children }: { label: string; detail?: string; chil
 export function SettingsSheet({
   home,
   bridge,
+  canBackup,
   settings,
   onChange,
   onClose,
 }: {
   home: Home;
   bridge: RyHomeBridge;
+  canBackup: boolean;
   settings: Settings;
   onChange: (patch: Partial<Settings>) => void;
   onClose: () => void;
@@ -51,6 +53,8 @@ export function SettingsSheet({
   const [launchAtLogin, setLaunchState] = useState<boolean | null>(null);
   const [version, setVersion] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [backupNote, setBackupNote] = useState<string | null>(null);
+  const [confirmRestore, setConfirmRestore] = useState(false);
 
   useEffect(() => {
     appVersion().then(setVersion, () => {});
@@ -67,6 +71,33 @@ export function SettingsSheet({
       setLaunchState(await getLaunchAtLogin());
     } catch (e) {
       setError(`Couldn't change launch at login: ${e}`);
+    }
+  }
+
+  async function exportBackup() {
+    setError(null);
+    setBackupNote(null);
+    try {
+      const path = await pickBackupSave();
+      if (!path) return;
+      await bridge.exportBackup(path);
+      setBackupNote(`Saved to ${path}`);
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
+
+  async function restoreBackup() {
+    setError(null);
+    setBackupNote(null);
+    setConfirmRestore(false);
+    try {
+      const path = await pickBackupOpen();
+      if (!path) return;
+      await bridge.restoreBackup(path);
+      setBackupNote("Restored. RyHome is restarting its engine and will reconnect in a moment.");
+    } catch (e) {
+      setError((e as Error).message);
     }
   }
 
@@ -116,6 +147,33 @@ export function SettingsSheet({
               </Row>
             </div>
             <p className="pref-note">Closing the window keeps RyHome running in the tray so your lights stay in sync.</p>
+            {canBackup && (
+              <>
+                <h3 className="pref-section">Backup</h3>
+                <div className="pref-group">
+                  <Row label="Export backup" detail="Your pairings, names, rooms, groups, scenes, and colors in one file. Keep it private.">
+                    <button className="glass-button" onClick={exportBackup}>
+                      Export...
+                    </button>
+                  </Row>
+                  <Row
+                    label="Restore backup"
+                    detail={confirmRestore ? "Replaces everything in RyHome with the backup. Your current data is saved first." : "Use on a new PC or after reinstalling. Only run one copy with the same backup."}
+                  >
+                    {confirmRestore ? (
+                      <button className="glass-button destructive" onClick={restoreBackup}>
+                        Choose File...
+                      </button>
+                    ) : (
+                      <button className="glass-button" onClick={() => setConfirmRestore(true)}>
+                        Restore...
+                      </button>
+                    )}
+                  </Row>
+                </div>
+                {backupNote && <p className="pref-note">{backupNote}</p>}
+              </>
+            )}
             <button className="glass-button destructive pref-quit" onClick={() => quitApp()}>
               Quit RyHome
             </button>

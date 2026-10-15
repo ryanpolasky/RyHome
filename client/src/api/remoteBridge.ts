@@ -1,5 +1,5 @@
 import type { ConnectionStatus, RyHomeBridge } from "./bridge";
-import type { Accessory, AccessoryDetails, BridgeEvent, Capabilities, GroupInput, Home, LightState, PresetInput } from "./types";
+import type { Accessory, AccessoryDetails, BridgeEvent, Capabilities, DeviceStatePatch, GroupInput, Home, LightState, PresetInput, SceneInput } from "./types";
 
 const POLICY_VIOLATION = 1008;
 const WATCHDOG_MS = 15_000;
@@ -44,8 +44,24 @@ export class RemoteBridge implements RyHomeBridge {
     return this.request("PATCH", `/v1/accessories/${encodeURIComponent(accessoryId)}/light`, patch);
   }
 
+  setState(accessoryId: string, patch: DeviceStatePatch): Promise<void> {
+    return this.request("PATCH", `/v1/accessories/${encodeURIComponent(accessoryId)}/state`, patch);
+  }
+
   runScene(sceneId: string): Promise<void> {
     return this.request("POST", `/v1/scenes/${encodeURIComponent(sceneId)}/run`);
+  }
+
+  async createScene(scene: SceneInput): Promise<void> {
+    await this.request("POST", "/v1/scenes", scene);
+  }
+
+  async updateScene(sceneId: string, scene: SceneInput): Promise<void> {
+    await this.request("PUT", `/v1/scenes/${encodeURIComponent(sceneId)}`, scene);
+  }
+
+  deleteScene(sceneId: string): Promise<void> {
+    return this.request("DELETE", `/v1/scenes/${encodeURIComponent(sceneId)}`);
   }
 
   async createGroup(group: GroupInput): Promise<void> {
@@ -70,6 +86,18 @@ export class RemoteBridge implements RyHomeBridge {
 
   removeNode(nodeId: string): Promise<void> {
     return this.request("DELETE", `/v1/matter/nodes/${nodeId}`);
+  }
+
+  async exportBackup(path: string): Promise<void> {
+    await this.request("POST", "/v1/backup/export", { path });
+  }
+
+  async restoreBackup(path: string): Promise<void> {
+    await this.request("POST", "/v1/backup/restore", { path });
+  }
+
+  forgetNode(nodeId: string): Promise<void> {
+    return this.request("POST", `/v1/matter/nodes/${nodeId}/forget`);
   }
 
   subscribe(listener: (event: BridgeEvent) => void): () => void {

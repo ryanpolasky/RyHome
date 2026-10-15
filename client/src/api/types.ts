@@ -25,16 +25,61 @@ interface AccessoryBase {
   name: string;
   roomId: string;
   reachable: boolean;
+  matterNodeId?: string;
+  battery?: number | null;
 }
 
 export interface LightAccessory extends AccessoryBase {
   kind: "light";
-  matterNodeId?: string;
   members?: string[];
   groupId?: string;
   icon: LightIcon;
   supports: LightSupport;
   state: LightState;
+}
+
+export interface OutletAccessory extends AccessoryBase {
+  kind: "outlet";
+  style: "plug" | "switch";
+  on: boolean;
+  brightness: number | null;
+}
+
+export type SensorType = "temperature" | "humidity" | "motion" | "contact" | "leak" | "illuminance";
+
+export interface SensorAccessory extends AccessoryBase {
+  kind: "sensor";
+  sensor: SensorType;
+  value: number;
+}
+
+export interface LockAccessory extends AccessoryBase {
+  kind: "lock";
+  locked: boolean | null;
+  jammed: boolean;
+}
+
+export interface BlindAccessory extends AccessoryBase {
+  kind: "blind";
+  position: number | null;
+}
+
+export interface FanAccessory extends AccessoryBase {
+  kind: "fan";
+  on: boolean;
+  speed: number | null;
+}
+
+export interface ThermostatAccessory extends AccessoryBase {
+  kind: "thermostat";
+  current: number | null;
+  target: number | null;
+  mode: "off" | "heat" | "cool" | "auto" | "other";
+}
+
+export interface OtherAccessory extends AccessoryBase {
+  kind: "other";
+  deviceType: string;
 }
 
 export interface CameraAccessory extends AccessoryBase {
@@ -51,13 +96,27 @@ export interface MediaAccessory extends AccessoryBase {
   nowPlaying: string | null;
 }
 
-export interface SensorAccessory extends AccessoryBase {
-  kind: "sensor";
-  sensor: "temperature" | "humidity";
-  value: number;
-}
+export type Accessory =
+  | LightAccessory
+  | OutletAccessory
+  | SensorAccessory
+  | LockAccessory
+  | BlindAccessory
+  | FanAccessory
+  | ThermostatAccessory
+  | OtherAccessory
+  | CameraAccessory
+  | MediaAccessory;
 
-export type Accessory = LightAccessory | CameraAccessory | MediaAccessory | SensorAccessory;
+export interface DeviceStatePatch {
+  on?: boolean;
+  brightness?: number;
+  locked?: boolean;
+  position?: number;
+  stop?: boolean;
+  speed?: number;
+  targetDelta?: number;
+}
 
 export interface SceneAction {
   accessoryId: string;
@@ -97,7 +156,10 @@ export interface Capabilities {
   pairing: boolean;
   rename: boolean;
   groups: boolean;
+  backup: boolean;
 }
+
+export type SceneInput = Omit<Scene, "id">;
 
 export interface GroupInput {
   name: string;

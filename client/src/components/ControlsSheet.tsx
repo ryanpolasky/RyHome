@@ -1,9 +1,11 @@
 import type { CSSProperties } from "react";
-import { useCallback, useContext, useEffect, useRef, useState } from "react";
+import { useCallback, useContext, useRef, useState } from "react";
 import type { RyHomeBridge } from "../api/bridge";
-import type { Accessory, ColorPreset, LightAccessory, LightIcon, LightState, PresetInput, Room } from "../api/types";
+import type { Accessory, ColorPreset, DeviceStatePatch, LightAccessory, LightIcon, LightState, PresetInput, Room } from "../api/types";
 import { lightColor, statusText, UnitContext } from "../home";
 import { ColorWheel } from "./ColorWheel";
+import { ContextMenu } from "./ContextMenu";
+import { DeviceControls } from "./DeviceControls";
 import { GroupEditor } from "./GroupEditor";
 import { Icon } from "./Icon";
 import { RoomPicker } from "./RoomPicker";
@@ -63,53 +65,6 @@ function Swatch({
         onMenu(e.clientX, e.clientY);
       }}
     />
-  );
-}
-
-function SwatchMenu({
-  x,
-  y,
-  custom,
-  onSave,
-  onReset,
-  onClose,
-}: {
-  x: number;
-  y: number;
-  custom: boolean;
-  onSave: () => void;
-  onReset: () => void;
-  onClose: () => void;
-}) {
-  useEffect(() => {
-    const close = () => onClose();
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key !== "Escape") return;
-      e.stopPropagation();
-      onClose();
-    };
-    window.addEventListener("pointerdown", close);
-    window.addEventListener("keydown", onKey, true);
-    return () => {
-      window.removeEventListener("pointerdown", close);
-      window.removeEventListener("keydown", onKey, true);
-    };
-  }, [onClose]);
-  const pick = (action: () => void) => () => {
-    action();
-    onClose();
-  };
-  return (
-    <div className="menu swatch-menu" style={{ left: x, top: y }} onPointerDown={(e) => e.stopPropagation()}>
-      <button className="menu-item" onClick={pick(onSave)}>
-        Save Current Color Here
-      </button>
-      {custom && (
-        <button className="menu-item" onClick={pick(onReset)}>
-          Reset to Default
-        </button>
-      )}
-    </div>
   );
 }
 
@@ -269,13 +224,14 @@ function LightControls({
       )}
       {picking && <p className="add-hint">Right-click or hold a swatch to save this color there.</p>}
       {menu && (
-        <SwatchMenu
+        <ContextMenu
           x={menu.x}
           y={menu.y}
-          custom={presets[menu.index].custom}
-          onSave={() => onSavePreset(menu.index, { colorMode, hue, saturation, colorTemperature })}
-          onReset={() => onSavePreset(menu.index, null)}
           onClose={closeMenu}
+          items={[
+            { label: "Save Current Color Here", onSelect: () => onSavePreset(menu.index, { colorMode, hue, saturation, colorTemperature }) },
+            ...(presets[menu.index].custom ? [{ label: "Reset to Default", onSelect: () => onSavePreset(menu.index, null) }] : []),
+          ]}
         />
       )}
       {members.length > 0 && (
@@ -302,18 +258,20 @@ function LightSettings({
   onGroup,
   onRemoved,
 }: {
-  light: LightAccessory;
+  light: Accessory;
   rooms: Room[];
   bridge: RyHomeBridge;
   canGroup: boolean;
   onGroup: () => void;
   onRemoved: () => void;
 }) {
-  const isGroup = !!light.members;
+  const isGroup = light.kind === "light" && !!light.members;
+  const lightIcon = light.kind === "light" ? light.icon : null;
   const [name, setName] = useState(light.name);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [confirming, setConfirming] = useState(false);
+  const [removeFailed, setRemoveFailed] = useState(false);
   const room = rooms.find((r) => r.id === light.roomId)?.name ?? "";
 
   const run = async (action: () => Promise<void>) => {
@@ -346,14 +304,14 @@ function LightSettings({
         <span>Room</span>
         <RoomPicker rooms={rooms} value={room} disabled={busy} onChange={(r) => run(() => bridge.updateAccessory(light.id, { room: r }))} />
       </label>
-      <div className="settings-row">
+      {lightIcon && <div className="settings-row">
         <span>Icon</span>
         <div className="icon-choices">
           {iconChoices.map((icon) => (
             <button
               key={icon}
               aria-label={icon}
-              className={`icon-choice ${light.icon === icon ? "selected" : ""}`}
+              className={`icon-choice ${lightIcon === icon ? "selected" : ""}`}
               disabled={busy}
               onClick={() => run(() => bridge.updateAccessory(light.id, { icon }))}
             >
@@ -361,7 +319,7 @@ function LightSettings({
             </button>
           ))}
         </div>
-      </div>
+      </div>}
       {canGroup && (
         <button className="glass-button" disabled={busy} onClick={onGroup}>
           {isGroup ? "Edit Lights in Group..." : "Group with Other Lights..."}
@@ -373,7 +331,9 @@ function LightSettings({
             <p>
               {isGroup
                 ? "The lights stay in RyHome and go back to showing on their own."
-                : "RyHome will stop controlling this light. It keeps working in any other app it's paired with."}
+                : removeFailed
+                  ? "It didn't answer. Forget Anyway removes it from RyHome, but RyHome's pairing stays on the light until you remove it in the light's other app (in Apple Home, under the light's connected services) or reset it."
+                  : "RyHome will stop controlling this light. It keeps working in any other app it's paired with."}
             </p>
             <div className="settings-actions">
               <button className="glass-button" disabled={busy} onClick={() => setConfirming(false)}>
@@ -384,13 +344,32 @@ function LightSettings({
                 disabled={busy}
                 onClick={() =>
                   run(async () => {
-                    await (isGroup ? bridge.deleteGroup(light.id) : bridge.removeNode(light.matterNodeId!));
+                    try {
+                      await (isGroup ? bridge.deleteGroup(light.id) : bridge.removeNode(light.matterNodeId!));
+                    } catch (e) {
+                      if (!isGroup) setRemoveFailed(true);
+                      throw e;
+                    }
                     onRemoved();
                   })
                 }
               >
-                {busy ? "Working..." : isGroup ? "Ungroup" : "Remove"}
+                {busy ? "Working..." : isGroup ? "Ungroup" : removeFailed ? "Try Again" : "Remove"}
               </button>
+              {removeFailed && (
+                <button
+                  className="glass-button destructive"
+                  disabled={busy}
+                  onClick={() =>
+                    run(async () => {
+                      await bridge.forgetNode(light.matterNodeId!);
+                      onRemoved();
+                    })
+                  }
+                >
+                  Forget Anyway
+                </button>
+              )}
             </div>
           </div>
         ) : (
@@ -439,6 +418,7 @@ export function ControlsSheet({
   onClose,
   onSetLight,
   onToggleLight,
+  onSetDevice,
   presets,
   onSavePreset,
 }: {
@@ -450,6 +430,7 @@ export function ControlsSheet({
   onClose: () => void;
   onSetLight: (patch: Partial<LightState>) => void;
   onToggleLight: (id: string) => void;
+  onSetDevice: (patch: DeviceStatePatch) => void;
   presets: ColorPreset[];
   onSavePreset: (index: number, preset: PresetInput) => void;
 }) {
@@ -457,7 +438,8 @@ export function ControlsSheet({
   const [mode, setMode] = useState<"controls" | "settings" | "group">("controls");
   const lights = accessories.filter((a): a is LightAccessory => a.kind === "light");
   const members = accessory.kind === "light" && accessory.members ? lights.filter((l) => accessory.members!.includes(l.id)) : [];
-  const settingsLabel = accessory.kind === "light" && accessory.members ? "Group Settings" : "Light Settings";
+  const settingsLabel = accessory.kind === "light" ? (accessory.members ? "Group Settings" : "Light Settings") : "Accessory Settings";
+  const configurable = accessory.kind === "light" || !!accessory.matterNodeId;
 
   return (
     <Sheet
@@ -473,7 +455,7 @@ export function ControlsSheet({
       }
       onClose={onClose}
       footer={
-        accessory.kind === "light" &&
+        configurable &&
         mode !== "group" && (
           <button className="glass-button" onClick={() => setMode(mode === "controls" ? "settings" : "controls")}>
             {mode === "controls" ? settingsLabel : "Done"}
@@ -481,8 +463,19 @@ export function ControlsSheet({
         )
       }
     >
-      {accessory.kind !== "light" ? (
+      {mode === "settings" ? (
+        <LightSettings
+          light={accessory}
+          rooms={rooms}
+          bridge={bridge}
+          canGroup={canGroup && accessory.kind === "light"}
+          onGroup={() => setMode("group")}
+          onRemoved={onClose}
+        />
+      ) : accessory.kind === "camera" || accessory.kind === "television" || accessory.kind === "speaker" ? (
         <Readout accessory={accessory} />
+      ) : accessory.kind !== "light" ? (
+        <DeviceControls accessory={accessory} onChange={onSetDevice} />
       ) : mode === "group" ? (
         <GroupEditor
           bridge={bridge}
@@ -491,15 +484,6 @@ export function ControlsSheet({
           group={accessory.members ? accessory : undefined}
           seed={accessory.members ? undefined : accessory}
           onDone={() => (accessory.members ? setMode("settings") : onClose())}
-        />
-      ) : mode === "settings" ? (
-        <LightSettings
-          light={accessory}
-          rooms={rooms}
-          bridge={bridge}
-          canGroup={canGroup}
-          onGroup={() => setMode("group")}
-          onRemoved={onClose}
         />
       ) : (
         <LightControls

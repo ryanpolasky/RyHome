@@ -1,12 +1,14 @@
 import type { ConnectionStatus } from "../api/bridge";
-import type { Accessory, Home, Room } from "../api/types";
+import { useState } from "react";
+import type { Accessory, Home, Room, Scene } from "../api/types";
 import type { MenuItem } from "./MoreMenu";
 import { MoreMenu } from "./MoreMenu";
 import type { View } from "../home";
 import { categories, categoryOf, categorySummary } from "../home";
 import { Icon } from "./Icon";
 import { categoryIcons } from "./Sidebar";
-import { AccessoryTile, SceneTile } from "./Tile";
+import { ContextMenu } from "./ContextMenu";
+import { AccessoryTile, AddTile, SceneTile } from "./Tile";
 import { WindowControls } from "./WindowControls";
 
 const kindOrder: Accessory["kind"][] = ["camera", "light", "television", "speaker", "sensor"];
@@ -25,6 +27,7 @@ export function HomeView({
   menu,
   status,
   emptyHint,
+  onEditScene,
 }: {
   home: Home;
   view: View;
@@ -35,7 +38,9 @@ export function HomeView({
   menu: MenuItem[];
   status: ConnectionStatus;
   emptyHint?: string;
+  onEditScene?: (scene: Scene | null) => void;
 }) {
+  const [sceneMenu, setSceneMenu] = useState<{ scene: Scene; x: number; y: number } | null>(null);
   const statusLabel = { online: null, connecting: "Connecting...", offline: "Mac Unreachable", unauthorized: "Pairing Expired" }[status];
   const room = view.type === "room" ? home.rooms.find((r) => r.id === view.id) : undefined;
   const category = view.type === "category" ? categories.find((c) => c.id === view.id) : undefined;
@@ -93,15 +98,32 @@ export function HomeView({
             ))}
           </div>
         )}
-        {view.type === "home" && home.scenes.length > 0 && (
+        {view.type === "home" && (home.scenes.length > 0 || onEditScene) && (
           <section className="room-section">
             <div className="section-title static">Scenes</div>
             <div className="tile-grid">
               {home.scenes.map((s) => (
-                <SceneTile key={s.id} scene={s} onRun={() => onRunScene(s.id)} />
+                <SceneTile
+                  key={s.id}
+                  scene={s}
+                  onRun={() => onRunScene(s.id)}
+                  onMenu={onEditScene && ((x, y) => setSceneMenu({ scene: s, x, y }))}
+                />
               ))}
+              {onEditScene && <AddTile label="Add Scene" onClick={() => onEditScene(null)} />}
             </div>
           </section>
+        )}
+        {sceneMenu && onEditScene && (
+          <ContextMenu
+            x={sceneMenu.x}
+            y={sceneMenu.y}
+            onClose={() => setSceneMenu(null)}
+            items={[
+              { label: "Run Scene", onSelect: () => onRunScene(sceneMenu.scene.id) },
+              { label: "Edit Scene...", onSelect: () => onEditScene(sceneMenu.scene) },
+            ]}
+          />
         )}
         {room ? grid(visible) : home.rooms.map(roomSection)}
         {visible.length === 0 && (

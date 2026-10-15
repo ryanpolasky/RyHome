@@ -1,16 +1,18 @@
 import { useCallback, useEffect, useState } from "react";
 import type { RyHomeBridge } from "./api/bridge";
+import type { LightAccessory, Scene } from "./api/types";
 import { AddLightSheet } from "./components/AddLightSheet";
 import { ControlsSheet } from "./components/ControlsSheet";
 import { HomeView } from "./components/HomeView";
 import type { MenuItem } from "./components/MoreMenu";
 import { Onboarding } from "./components/Onboarding";
+import { SceneEditor } from "./components/SceneEditor";
 import { SettingsSheet } from "./components/SettingsSheet";
 import { Sidebar } from "./components/Sidebar";
 import { WindowControls } from "./components/WindowControls";
 import type { Mode } from "./connection";
 import { createBridge, loadMode, saveMode } from "./connection";
-import { hideOnMinimize, isDesktop } from "./desktop";
+import { hideOnMinimize, isDesktop, setTrayScenes } from "./desktop";
 import type { Settings } from "./settings";
 import { useSettings } from "./settings";
 import type { View } from "./home";
@@ -102,6 +104,7 @@ function HomeApp({
   const [openId, setOpenId] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [editingScene, setEditingScene] = useState<Scene | null | undefined>(undefined);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -116,6 +119,12 @@ function HomeApp({
   const closeSheet = useCallback(() => setOpenId(null), []);
   const open = store.home?.accessories.find((a) => a.id === openId);
 
+  const sceneList = JSON.stringify(store.home?.scenes.map((s) => ({ id: s.id, name: s.name })) ?? null);
+  useEffect(() => {
+    if (!isDesktop || demo || sceneList === "null") return;
+    setTrayScenes(JSON.parse(sceneList)).catch((e) => console.warn("Couldn't update the tray menu", e));
+  }, [sceneList, demo]);
+
   useEffect(() => {
     if (!store.actionError) return;
     const timer = setTimeout(store.clearActionError, 5000);
@@ -124,6 +133,7 @@ function HomeApp({
 
   const menu: MenuItem[] = [
     ...(store.capabilities?.pairing ? [{ label: "Add Light...", onSelect: () => setAdding(true) }] : []),
+    ...(store.capabilities?.scenes ? [{ label: "Add Scene...", onSelect: () => setEditingScene(null) }] : []),
     { label: "Settings...", onSelect: () => setSettingsOpen(true) },
     ...(isDesktop || demo ? [{ label: demo ? "Exit Demo" : "Show Demo", onSelect: onToggleDemo, destructive: demo }] : []),
   ];
@@ -159,6 +169,7 @@ function HomeApp({
           onRunScene={store.runScene}
           menu={menu}
           status={store.status}
+          onEditScene={store.capabilities?.scenes ? setEditingScene : undefined}
           emptyHint={store.capabilities?.pairing ? "Choose Add Light from the ••• menu to bring in your Matter lights." : undefined}
         />
         {open && (
@@ -171,14 +182,25 @@ function HomeApp({
             onClose={closeSheet}
             onSetLight={(patch) => store.setLight(open.id, patch)}
             onToggleLight={store.toggleLight}
+            onSetDevice={(patch) => store.setDevice(open.id, patch)}
             presets={store.home.colorPresets}
             onSavePreset={store.setColorPreset}
+          />
+        )}
+        {editingScene !== undefined && (
+          <SceneEditor
+            bridge={bridge}
+            lights={store.home.accessories.filter((a): a is LightAccessory => a.kind === "light")}
+            rooms={store.home.rooms}
+            scene={editingScene ?? undefined}
+            onClose={() => setEditingScene(undefined)}
           />
         )}
         {settingsOpen && (
           <SettingsSheet
             home={store.home}
             bridge={bridge}
+            canBackup={store.capabilities?.backup ?? false}
             settings={settings}
             onChange={onSettingsChange}
             onClose={() => setSettingsOpen(false)}

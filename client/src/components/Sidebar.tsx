@@ -9,6 +9,7 @@ import { Icon } from "./Icon";
 export const categoryIcons: Record<string, IconName> = {
   climate: "fan",
   lights: "bulb",
+  power: "plug",
   security: "lock",
   media: "media",
 };

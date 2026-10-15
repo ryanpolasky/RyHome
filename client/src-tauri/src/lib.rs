@@ -1,12 +1,12 @@
 use std::fs::{self, File, OpenOptions};
 use std::io::{BufRead, BufReader, Write};
-use std::net::TcpListener;
+use std::net::{TcpListener, TcpStream};
 use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
 use std::sync::{Arc, Condvar, Mutex};
 use std::thread;
-use std::time::Duration;
-use tauri::menu::{Menu, MenuItem};
+use std::time::{Duration, Instant};
+use tauri::menu::{Menu, MenuItem, PredefinedMenuItem, Submenu};
 use tauri::path::BaseDirectory;
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{AppHandle, Manager, RunEvent, State, WindowEvent};
@@ -15,6 +15,9 @@ use tauri_plugin_autostart::MacosLauncher;
 const HIDDEN_ARG: &str = "--hidden";
 const READY_PREFIX: &str = "RYHOME_READY";
 const READY_TIMEOUT: Duration = Duration::from_secs(45);
+const HEALTHY_RUN: Duration = Duration::from_secs(60);
+const TRAY_ID: &str = "main";
+const SCENE_PREFIX: &str = "scene:";
 
 #[derive(Default)]
 struct CoreState {
@@ -35,6 +38,12 @@ struct Core {
 struct CoreConnection {
   url: String,
   token: String,
+}
+
+#[derive(serde::Deserialize, Clone)]
+struct TrayScene {
+  id: String,
+  name: String,
 }
 
 fn random_token() -> Result<String, String> {
@@ -130,6 +139,7 @@ fn supervise(app: AppHandle, core: Arc<Core>) {
       pipe_lines(child.stdout.take().unwrap(), open_log(&app), Some(core.clone()));
       pipe_lines(child.stderr.take().unwrap(), open_log(&app), None);
       let pid = child.id();
+      let started = Instant::now();
       core.state.lock().unwrap().child = Some(child);
       loop {
         thread::sleep(Duration::from_millis(500));
@@ -145,6 +155,10 @@ fn supervise(app: AppHandle, core: Arc<Core>) {
       }
       if core.state.lock().unwrap().stopping {
         return;
+      }
+      // a crash after a good long run shouldn't inherit the delay from an earlier crash loop
+      if started.elapsed() > HEALTHY_RUN {
+        backoff = Duration::from_secs(1);
       }
       thread::sleep(backoff);
       backoff = (backoff * 2).min(Duration::from_secs(30));
@@ -189,13 +203,70 @@ fn quit(app: AppHandle) {
   app.exit(0);
 }
 
+fn tray_menu(app: &AppHandle, scenes: &[TrayScene]) -> tauri::Result<Menu<tauri::Wry>> {
+  let scene_menu = Submenu::with_id(app, "scenes", "Scenes", true)?;
+  if scenes.is_empty() {
+    scene_menu.append(&MenuItem::with_id(app, "no-scenes", "No Scenes Yet", false, None::<&str>)?)?;
+  }
+  for scene in scenes {
+    scene_menu.append(&MenuItem::with_id(app, format!("{SCENE_PREFIX}{}", scene.id), &scene.name, true, None::<&str>)?)?;
+  }
+  Menu::with_items(
+    app,
+    &[
+      &MenuItem::with_id(app, "open", "Open RyHome", true, None::<&str>)?,
+      &PredefinedMenuItem::separator(app)?,
+      &MenuItem::with_id(app, "all-off", "All Lights Off", true, None::<&str>)?,
+      &scene_menu,
+      &PredefinedMenuItem::separator(app)?,
+      &MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?,
+    ],
+  )
+}
+
+#[tauri::command]
+fn set_tray_scenes(app: AppHandle, scenes: Vec<TrayScene>) -> Result<(), String> {
+  let tray = app.tray_by_id(TRAY_ID).ok_or("no tray")?;
+  tray.set_menu(Some(tray_menu(&app, &scenes).map_err(|e| e.to_string())?)).map_err(|e| e.to_string())
+}
+
+// tiny blocking post to the local engine so the tray works even with the window closed
+fn engine_post(core: &Core, path: &str) -> Result<(), String> {
+  let addr = core.url.trim_start_matches("http://");
+  let mut stream = TcpStream::connect(addr).map_err(|e| e.to_string())?;
+  stream.set_read_timeout(Some(Duration::from_secs(15))).map_err(|e| e.to_string())?;
+  write!(
+    stream,
+    "POST {path} HTTP/1.1\r\nHost: {addr}\r\nAuthorization: Bearer {}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+    core.token
+  )
+  .map_err(|e| e.to_string())?;
+  let mut status = String::new();
+  BufReader::new(stream).read_line(&mut status).map_err(|e| e.to_string())?;
+  if status.split_whitespace().nth(1).is_some_and(|code| code.starts_with('2')) {
+    Ok(())
+  } else {
+    Err(status.trim().to_string())
+  }
+}
+
+fn tray_action(app: &AppHandle, path: String) {
+  let core = app.state::<Arc<Core>>().inner().clone();
+  thread::spawn(move || {
+    if let Err(error) = engine_post(&core, &path) {
+      eprintln!("tray action {path} failed: {error}");
+    }
+  });
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
   tauri::Builder::default()
     // a second copy would start a second matter controller on the same storage, so hand off to the first
     .plugin(tauri_plugin_single_instance::init(|app, _, _| show_main(app)))
     .plugin(tauri_plugin_autostart::init(MacosLauncher::LaunchAgent, Some(vec![HIDDEN_ARG])))
-    .invoke_handler(tauri::generate_handler![core_connection, quit])
+    .plugin(tauri_plugin_dialog::init())
+    .invoke_handler(tauri::generate_handler![core_connection, quit, set_tray_scenes])
     .setup(|app| {
       let core = Arc::new(Core {
         url: format!("http://127.0.0.1:{}", free_port()?),
@@ -206,11 +277,9 @@ pub fn run() {
       app.manage(core.clone());
       supervise(app.handle().clone(), core);
 
-      let open = MenuItem::with_id(app, "open", "Open RyHome", true, None::<&str>)?;
-      let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
-      let menu = Menu::with_items(app, &[&open, &quit])?;
+      let menu = tray_menu(app.handle(), &[])?;
       let icon = app.default_window_icon().cloned().ok_or("missing app icon")?;
-      TrayIconBuilder::new()
+      TrayIconBuilder::with_id(TRAY_ID)
         .icon(icon)
         .tooltip("RyHome")
         .menu(&menu)
@@ -218,7 +287,12 @@ pub fn run() {
         .on_menu_event(|app, event| match event.id.as_ref() {
           "open" => show_main(app),
           "quit" => app.exit(0),
-          _ => {}
+          "all-off" => tray_action(app, "/v1/lights/off".into()),
+          id => {
+            if let Some(scene) = id.strip_prefix(SCENE_PREFIX) {
+              tray_action(app, format!("/v1/scenes/{scene}/run"));
+            }
+          }
         })
         .on_tray_icon_event(|tray, event| {
           if let TrayIconEvent::Click {
