@@ -12,6 +12,14 @@ Matter accessories can belong to several controllers at once. You add each light
 - Your PC has to be on the same local network as your lights, with IPv6 working (most home networks do).
 - Only Matter accessories work. HomeKit-only accessories can't be added.
 
+## Device Support
+
+Cameras, doorbells, Apple TV, and HomePod aren't supported. This includes HomePod temperature and humidity readings; the demo's sensors represent standalone Matter sensors.
+
+Light controls have been tested with real Govee bulbs and a TV backlight. Controls for plugs, switches, locks, blinds, fans, and thermostats, plus Matter sensor readings, are implemented but haven't been tested on real hardware yet. Compatibility can vary by device.
+
+The demo only includes device types with implemented controls or readings, not placeholders for future features.
+
 ## Structure
 
 - `client/` - The Windows app. Vite + React + TypeScript in a Tauri 2 shell.

@@ -54,17 +54,6 @@ function seed(): Home {
       { id: "office", name: "Office" },
     ],
     accessories: [
-      {
-        id: "doorbell",
-        name: "Doorbell",
-        roomId: "front-door",
-        kind: "camera",
-        doorbell: true,
-        motion: false,
-        batteryLevel: 82,
-        snapshotUrl: null,
-        reachable: true,
-      },
       light("tv-backlight", "Main TV Backlight", "living-room", "lightstrip", {
         on: true,
         brightness: 60,
@@ -77,24 +66,6 @@ function seed(): Home {
       light("tall-top", "Tall Lamp Top", "living-room", "floorLamp", { on: true, brightness: 80 }),
       light("tall-middle", "Tall Lamp Middle", "living-room", "floorLamp", { on: true, brightness: 80 }),
       light("tall-bottom", "Tall Lamp Bottom", "living-room", "floorLamp", { on: true, brightness: 80 }),
-      {
-        id: "apple-tv",
-        name: "Apple TV",
-        roomId: "living-room",
-        kind: "television",
-        playing: false,
-        nowPlaying: null,
-        reachable: true,
-      },
-      {
-        id: "homepod-mini",
-        name: "HomePod mini",
-        roomId: "living-room",
-        kind: "speaker",
-        playing: true,
-        nowPlaying: "Jazz Vibes",
-        reachable: true,
-      },
       {
         id: "temperature",
         name: "Temperature",
@@ -129,7 +100,6 @@ function seed(): Home {
       { id: "hall-motion", name: "Hallway Motion", roomId: "living-room", kind: "sensor", sensor: "motion", value: 0, reachable: true, battery: 55, matterNodeId: "hall-motion" },
       { id: "living-shades", name: "Shades", roomId: "living-room", kind: "blind", position: 60, reachable: true, matterNodeId: "living-shades" },
       { id: "thermostat", name: "Thermostat", roomId: "living-room", kind: "thermostat", current: 21.5, target: 22, mode: "heat", reachable: true, matterNodeId: "thermostat" },
-      { id: "vacuum", name: "Robot Vacuum", roomId: "living-room", kind: "other", deviceType: "Robot Vacuum", reachable: true, matterNodeId: "vacuum" },
     ],
     scenes: [
       { id: "scene-arrive", name: "Arrive Home", type: "arrival", actions: [] },
