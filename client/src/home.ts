@@ -61,7 +61,7 @@ export function categoryOf(accessory: Accessory): CategoryId | null {
 }
 
 export function categorySummary(home: Home, id: CategoryId): string | null {
-  const items = home.accessories.filter((a) => categoryOf(a) === id && !(a.kind === "light" && a.members));
+  const items = home.accessories.filter((a) => categoryOf(a) === id && !(a.kind === "light" && a.groupId));
   if (items.length === 0) return null;
   switch (id) {
     case "climate": {

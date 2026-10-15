@@ -9,6 +9,7 @@ export function Sheet({
   status,
   onClose,
   footer,
+  form,
   children,
 }: {
   icon: ReactNode;
@@ -17,6 +18,7 @@ export function Sheet({
   status?: ReactNode;
   onClose: () => void;
   footer?: ReactNode;
+  form?: boolean;
   children: ReactNode;
 }) {
   useEffect(() => {
@@ -26,7 +28,7 @@ export function Sheet({
   }, [onClose]);
 
   return (
-    <div className="sheet-backdrop" onClick={onClose}>
+    <div className="sheet-backdrop" onClick={form ? undefined : onClose}>
       <div className="sheet-header" onClick={(e) => e.stopPropagation()}>
         <span className={`sheet-icon ${tint ? "on" : ""}`} style={tint ? ({ "--tint": tint } as CSSProperties) : undefined}>
           {icon}

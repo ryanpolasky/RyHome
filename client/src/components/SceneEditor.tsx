@@ -71,7 +71,7 @@ export function SceneEditor({
     });
 
   return (
-    <Sheet icon={<Icon name={sceneIcons[type]} size={20} />} title={scene ? "Edit Scene" : "New Scene"} onClose={busy ? () => {} : onClose}>
+    <Sheet icon={<Icon name={sceneIcons[type]} size={20} />} title={scene ? "Edit Scene" : "New Scene"} form onClose={busy ? () => {} : onClose}>
       <div className="settings-panel scene-editor">
         <label className="settings-row">
           <span>Name</span>

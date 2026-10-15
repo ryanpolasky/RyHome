@@ -102,7 +102,7 @@ export function SettingsSheet({
   }
 
   return (
-    <Sheet icon={<Icon name="settings" size={20} />} title="Settings" status={version && `RyHome ${version}`} onClose={onClose}>
+    <Sheet icon={<Icon name="settings" size={20} />} title="Settings" status={version && `RyHome ${version}`} form onClose={onClose}>
       <div className="prefs">
         <h3 className="pref-section">Home</h3>
         <div className="pref-group">

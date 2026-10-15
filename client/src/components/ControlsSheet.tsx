@@ -454,6 +454,7 @@ export function ControlsSheet({
         )
       }
       onClose={onClose}
+      form={mode !== "controls"}
       footer={
         configurable &&
         mode !== "group" && (

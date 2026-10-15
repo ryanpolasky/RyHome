@@ -27,7 +27,7 @@ export function AddLightSheet({ bridge, rooms, onClose }: { bridge: RyHomeBridge
   }
 
   return (
-    <Sheet icon={<Icon name="bulb" size={20} />} title="Add Light" status="Any Matter light on this network" onClose={busy ? () => {} : onClose}>
+    <Sheet icon={<Icon name="bulb" size={20} />} title="Add Light" status="Any Matter light on this network" form onClose={busy ? () => {} : onClose}>
       {added ? (
         <div className="add-panel">
           <p className="add-lead">
