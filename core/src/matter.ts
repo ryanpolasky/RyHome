@@ -6,6 +6,7 @@ import { CommissioningController, type NodeCommissioningOptions } from "@project
 import { NodeStates, type PairedNode } from "@project-chip/matter.js/device";
 import { hsToXy, xyToHs } from "./color.js";
 import { dataDir } from "./config.js";
+import { clearForeignLock } from "./lock.js";
 import type { Accessory, DeviceStatePatch, LightState, LightSupport, SensorType, ThermostatAccessory } from "./types.js";
 
 type Struct = Record<string, unknown>;
@@ -132,6 +133,7 @@ export class MatterHub {
     Logger.format = process.stdout.isTTY && !process.env.NO_COLOR ? "ansi" : "plain";
     const environment = Environment.default;
     environment.vars.set("path.root", join(dataDir, "matter"));
+    clearForeignLock(join(dataDir, "matter", "ryhome"));
     this.#controller = new CommissioningController({
       environment: { environment, id: "ryhome" },
       autoConnect: false,
