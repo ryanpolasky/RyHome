@@ -86,6 +86,6 @@ export function buildHome(matter: MatterHub, scenes: SceneStore, store: Accessor
     colorPresets: resolvePresets(store.settings.colorPresets),
     rooms: [...rooms.values()].filter((r) => usedRooms.has(r.id)).sort((a, b) => a.name.localeCompare(b.name)),
     accessories,
-    scenes: scenes.scenes,
+    scenes: structuredClone(scenes.scenes),
   };
 }
