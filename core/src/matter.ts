@@ -363,6 +363,9 @@ export class MatterHub {
       await commands("onOff").off();
       return;
     }
+    // some bulbs (govee) drop color commands while off even with executeIfOff, so power on first
+    const wasOff = !this.#readState(ep).on;
+    if (wasOff) await this.#powerOn(ep, patch);
     const features = (ep.behaviors.has("colorControl") ? ep.maybeFeaturesOf("colorControl") ?? {} : {}) as Record<string, boolean>;
     if (patch.colorMode === "temperature" && patch.colorTemperature !== undefined && features.colorTemperature) {
       await commands("colorControl").moveToColorTemperature({
@@ -391,15 +394,19 @@ export class MatterHub {
         });
       }
     }
+    if (!wasOff) await this.#powerOn(ep, patch);
+  }
+
+  async #powerOn(ep: Endpoint, patch: Partial<LightState>) {
     if (patch.brightness !== undefined && ep.behaviors.has("levelControl")) {
-      await commands("levelControl").moveToLevelWithOnOff({
+      await this.#commands(ep, "levelControl").moveToLevelWithOnOff({
         level: Math.max(1, Math.round((patch.brightness / 100) * LEVEL_MAX)),
         transitionTime: 0,
         optionsMask: {},
         optionsOverride: {},
       });
     } else if (patch.on === true) {
-      await commands("onOff").on();
+      await this.#commands(ep, "onOff").on();
     }
   }
 
